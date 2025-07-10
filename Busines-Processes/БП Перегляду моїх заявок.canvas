@@ -1,0 +1,23 @@
+{
+	"nodes":[
+		{"id":"285c0bedc7ce58e6","x":-154,"y":-31,"width":354,"height":111,"color":"6","type":"text","text":"### Перегляд моїх заявок\n#business-process\n"},
+		{"id":"7aa7870857946885","x":295,"y":15,"width":345,"height":65,"color":"4","type":"text","text":"### Переглянути мої заявки"},
+		{"id":"f7b72d6e5dfa664c","x":299,"y":140,"width":341,"height":200,"color":"5","type":"text","text":"### Вивести мої заявки списком\n- Зявки виводяться списком згорнутих цитат, там де спереду тип, потім стан і суть і номер заявки"},
+		{"id":"fe525e632ef35c26","x":-50,"y":210,"width":250,"height":60,"color":"4","type":"text","text":"Видалити заявку Х"},
+		{"id":"5c5f914ceb1dd083","x":-50,"y":420,"width":250,"height":60,"color":"3","type":"text","text":"Заявка була помилкова чи вирішена"},
+		{"id":"a30d9683ca841af8","x":343,"y":420,"width":250,"height":60,"color":"3","type":"text","text":"Її Вирішив ти чи механік?"},
+		{"id":"58e7dc80f332c869","x":-50,"y":640,"width":250,"height":60,"color":"3","type":"text","text":"Помилкова"},
+		{"id":"4747f02083302361","x":382,"y":568,"width":250,"height":72,"color":"1","type":"text","text":"Заявку архівовано"},
+		{"id":"175c05f7738b584b","x":299,"y":720,"width":250,"height":60,"color":"1","type":"text","text":"Заявку успішно видалено"}
+	],
+	"edges":[
+		{"id":"fbee1d2ab2e6ba03","fromNode":"285c0bedc7ce58e6","fromSide":"right","toNode":"7aa7870857946885","toSide":"left"},
+		{"id":"f8903cbce320205e","fromNode":"7aa7870857946885","fromSide":"bottom","toNode":"f7b72d6e5dfa664c","toSide":"top"},
+		{"id":"02b1a37fe05c861b","fromNode":"f7b72d6e5dfa664c","fromSide":"left","toNode":"fe525e632ef35c26","toSide":"right"},
+		{"id":"9cc5f9ef9b6a9195","fromNode":"fe525e632ef35c26","fromSide":"bottom","toNode":"5c5f914ceb1dd083","toSide":"top"},
+		{"id":"71f59015bd6a23a7","fromNode":"5c5f914ceb1dd083","fromSide":"right","toNode":"a30d9683ca841af8","toSide":"left","label":"Вирішена"},
+		{"id":"560690b0d06068b7","fromNode":"5c5f914ceb1dd083","fromSide":"bottom","toNode":"58e7dc80f332c869","toSide":"top","label":"Помилкова"},
+		{"id":"9e64c86a565aa892","fromNode":"58e7dc80f332c869","fromSide":"right","toNode":"175c05f7738b584b","toSide":"left"},
+		{"id":"26c024c3706775d3","fromNode":"a30d9683ca841af8","fromSide":"bottom","toNode":"4747f02083302361","toSide":"top"}
+	]
+}

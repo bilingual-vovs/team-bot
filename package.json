@@ -1,0 +1,17 @@
+{
+  "name": "golosiyvo-bot",
+  "version": "1.0.0",
+  "description": "Race team bot",
+  "main": "bot.js",
+  "scripts": {
+    "dev": "nodemon bot.js --ignore apikey.txt --ignore users.json --ignore chatStates.json",
+    "start": "node bot.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0",
+    "nodemon": "^3.1.10"
+  }
+}

@@ -1,0 +1,15 @@
+{
+	"nodes":[
+		{"id":"f7e6ef6b7c856457","type":"text","text":"### Реєстрація проблеми з велосипедом\n#business-process","x":-420,"y":-160,"width":406,"height":176,"color":"6"},
+		{"id":"f35126d832cd425e","x":92,"y":-102,"width":250,"height":60,"color":"4","type":"text","text":"##### Заявити проблему "},
+		{"id":"b107bfb65380353e","x":444,"y":-101,"width":336,"height":241,"color":"3","type":"text","text":"##### З чим у требе проблема\n- Перемикання\n- Гальма\n- Вилка\n- Колеса\n- Інше\n- Не знаю"},
+		{"id":"3e5741ed0c3760a2","x":487,"y":220,"width":250,"height":60,"color":"3","type":"text","text":"Опиши текстом проблему"},
+		{"id":"09f6632342b173e6","x":436,"y":360,"width":353,"height":160,"color":"1","type":"text","text":"##### Дякую заявка готова\n- Занесення заявки в бд з заявками \n- Вирішені заявки будуть помічатися як archived"}
+	],
+	"edges":[
+		{"id":"e225e6b754559dbe","fromNode":"f7e6ef6b7c856457","fromSide":"right","toNode":"f35126d832cd425e","toSide":"left"},
+		{"id":"13c4eb429c9e4c86","fromNode":"f35126d832cd425e","fromSide":"right","toNode":"b107bfb65380353e","toSide":"left"},
+		{"id":"0dfccba7aaa2c3f2","fromNode":"b107bfb65380353e","fromSide":"bottom","toNode":"3e5741ed0c3760a2","toSide":"top"},
+		{"id":"df03286ccbd6d9a5","fromNode":"3e5741ed0c3760a2","fromSide":"bottom","toNode":"09f6632342b173e6","toSide":"top"}
+	]
+}

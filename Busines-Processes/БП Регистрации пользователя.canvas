@@ -1,0 +1,20 @@
+{
+	"nodes":[
+		{"id":"abdf9ee7bda02d09","type":"text","text":"### Регистрация пользователя\n#business-process ","x":-300,"y":-140,"width":380,"height":140,"color":"6"},
+		{"id":"e6190976339b3ac2","type":"text","text":"##### Введіть код приєднання до команди","x":180,"y":-115,"width":354,"height":90,"color":"3"},
+		{"id":"7d12e9e9176c112f","type":"text","text":"##### Код вірний?\n- У нас на початку буде тільки один код\n","x":652,"y":24,"width":308,"height":136,"color":"2"},
+		{"id":"f90261bd3e0cc7d0","type":"text","text":"##### Введи своє ім'я та прізвище","x":200,"y":62,"width":311,"height":58,"color":"3"},
+		{"id":"da284dbad33b315c","type":"text","text":"##### Код не вірний","x":1079,"y":-85,"width":250,"height":60,"color":"5"},
+		{"id":"0ea83a141398b3aa","type":"text","text":"##### Ти успішно зареєструвався\n- Гайд по використаню бота","x":189,"y":200,"width":333,"height":111,"color":"5"},
+		{"id":"9da2ed3ecb9ab738","type":"text","text":"- [[БП Реєстрації заявки проблеми з велосипедом.canvas|БП Реєстрації заявки проблеми з велосипедом]]\n- [[БП Перегляду моїх заявок.canvas|БП Перегляду моїх заявок]]","x":181,"y":380,"width":349,"height":115,"color":"1"}
+	],
+	"edges":[
+		{"id":"49b1f8e23cbac7f7","fromNode":"abdf9ee7bda02d09","fromSide":"right","toNode":"e6190976339b3ac2","toSide":"left"},
+		{"id":"90c52692791126bd","fromNode":"e6190976339b3ac2","fromSide":"right","toNode":"7d12e9e9176c112f","toSide":"top"},
+		{"id":"0345d7fe84890604","fromNode":"7d12e9e9176c112f","fromSide":"left","toNode":"f90261bd3e0cc7d0","toSide":"right","label":"Так"},
+		{"id":"56f6e9a4c78d57fa","fromNode":"7d12e9e9176c112f","fromSide":"right","toNode":"da284dbad33b315c","toSide":"bottom"},
+		{"id":"0e814f7ec62d6f1a","fromNode":"da284dbad33b315c","fromSide":"top","toNode":"e6190976339b3ac2","toSide":"top"},
+		{"id":"847e746d09365c0a","fromNode":"f90261bd3e0cc7d0","fromSide":"bottom","toNode":"0ea83a141398b3aa","toSide":"top"},
+		{"id":"5b583e3e1782eac2","fromNode":"0ea83a141398b3aa","fromSide":"bottom","toNode":"9da2ed3ecb9ab738","toSide":"top"}
+	]
+}
