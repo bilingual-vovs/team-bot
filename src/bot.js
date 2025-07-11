@@ -9,6 +9,31 @@ const User = require('./user.js').User
 const chatStatesPath = path.join(__dirname, '../database/chatStates.json');
 const teamCode = 'raceteam';
 
+freeStateHandle = (msg, user) => {
+    switch (msg.text.toLowerCase()) {
+        case '/create_ticket':
+            user.state = 'creating_ticket';
+            bot.sendMessage(msg.chat.id, `
+                Що трапилось з вашим велосипедом?! Опишіть детально:
+                \n- З чим пов'язана ваша проблема? (Перемикання передач, гальма, колеса і т.д.)
+                \n- Детально і лаконічно опишіть проблему, поважайте механіка йому це все читати, а головне розуміти! -Тому не жалійте часу
+                \n- Опишіть свій велосипед, для того що б мехінік міг його знайти`);
+            break;
+        case '/my_tickets':
+            if (user.tickets.length > 0) {
+                let ticketsList = user.tickets.map((ticket, index) => {
+                    return `${index + 1}. ${ticket.description} (Статус: ${ticket.status})`;
+                }).join('\n');
+                bot.sendMessage(msg.chat.id, `Ваші заявки:\n${ticketsList}`);
+            }
+            else {
+                bot.sendMessage(msg.chat.id, `У вас немає жодної заявки.`);
+            }
+        default:
+            break;
+    }   
+}
+
 const handleMsg = (msg, user) => {
     switch (user.state) {
         case "started":
@@ -37,9 +62,8 @@ const handleMsg = (msg, user) => {
             }
             break;
         case "role-selection":
-            console.log(msg.text.toLowerCase());
-            if (msg.text.toLowerCase() == 'cпортсмен' || msg.text.toLowerCase() == 'механік') {
-                user.role = (msg.text.toLowerCase() === 'cпортсмен') ? 'athlete' : 'mechanic';
+            if (msg.text.toLowerCase() == 'спортсмен' || msg.text.toLowerCase() == 'механік') {
+                user.role = (msg.text.toLowerCase() === 'спортсмен') ? 'athlete' : 'mechanic';
                 user.state = 'free';
                 user.authorized = true;
                 bot.sendMessage(msg.chat.id, 
@@ -55,6 +79,24 @@ const handleMsg = (msg, user) => {
             } else {
                 bot.sendMessage(msg.chat.id, `Будь ласка, виберіть роль зі списку.`);
             }
+        case "creating_ticket":
+            if (msg.text && msg.text.trim() !== '') {
+                user.tickets.push({
+                    description: msg.text.trim(),
+                    status: 'pending',
+                    createdAt: new Date().toISOString()
+                });
+                user.state = 'free';
+                user.saveUser().then(() => {
+                    bot.sendMessage(msg.chat.id, `Ваша заявка на обслуговування створена! Очікуйте на відповідь механіка.`);
+                }).catch(err => {
+                    console.error(`Error saving ticket: ${err}`);
+                    bot.sendMessage(msg.chat.id, `Виникла помилка при створенні заявки. Спробуйте ще раз.`);
+                });
+            }
+        default:
+            freeStateHandle(msg, user);
+            break;
     }
 }
 
