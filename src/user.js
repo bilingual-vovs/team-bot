@@ -6,16 +6,17 @@ const usersPath = path.join(process.cwd(), 'database', 'users.json');
 class User {
     constructor(chatId, state, name) {
         this.chatId = chatId;
-        this.state = state || 'new';
-        this.name = name || 'Unregistered User';
+        this.__state = state || 'new';
+        this.__name = name || 'Unregistered User';
     }
 
     chatId;
-    state;
+    __state;
     tickets = []
-    authorized = false;
+    __authorized = false;
+    __role;
 
-    readUserData = (id) => {
+    static readUserData = (id) => {
         return new Promise((resolve, reject) => {
             fs.readFile(usersPath, 'utf8', (err, data) => {
                 if (err) {
@@ -28,17 +29,16 @@ class User {
                     if (userData) {
                         resolve(new User(userData.chatId, userData.state, userData.name));
                     } else {
-                        resolve(this);
+                        resolve(new User(id));
                     }
                 } catch (e) {
-                    resolve(null);
+                    resolve(new User(id));
                 }
             });
         });
     }
     saveUser() {
         return new Promise((resolve, reject) => {
-            const usersPath = path.join(process.cwd(), 'src', 'users.json');
             fs.readFile(usersPath, 'utf8', (err, data) => {
                 let users = [];
                 if (!err && data) {
@@ -51,10 +51,11 @@ class User {
                 const idx = users.findIndex(u => u.chatId === this.chatId);
                 const userObj = {
                     chatId: this.chatId,
-                    state: this.state,
-                    name: this.name,
+                    state: this.__state,
+                    name: this.__name,
                     tickets: this.tickets,
-                    authorized: this.authorized
+                    authorized: this.__authorized,
+                    role: this.__role
                 };
                 if (idx !== -1) {
                     users[idx] = userObj;
@@ -72,9 +73,34 @@ class User {
         });
     }
     set state(newState) {
-        this.state = newState
+        this.__state = newState
         this.saveUser().catch(err => console.error(`Error saving user state: ${err}`));
     }
+    set name(newName) {
+        this.__name = newName
+        this.saveUser().catch(err => console.error(`Error saving user name: ${err}`));
+    }
+    set authorized(isAuthorized) {
+        this.__authorized = isAuthorized
+        this.saveUser().catch(err => console.error(`Error saving user authorization: ${err}`));
+    }
+    set role(newRole) {
+        this.__role = newRole
+        this.saveUser().catch(err => console.error(`Error saving user role: ${err}`));
+    }
+    get state() {
+        return this.__state;
+    }
+    get name() {
+        return this.__name;
+    }
+    get authorized() {
+        return this.__authorized;
+    }
+    get role() {
+        return this.__role;
+    }
+
 }
 
 exports.User = User;
