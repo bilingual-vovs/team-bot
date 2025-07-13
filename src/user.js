@@ -1,18 +1,20 @@
 const fs = require('fs');
 const path = require('path');
 
+const Ticket = require('./ticket.js').Ticket;
+
 const usersPath = path.join(process.cwd(), 'database', 'users.json');
 
 class User {
-    constructor(chatId, state, name) {
+    constructor(chatId, state, name, role) {
         this.chatId = chatId;
         this.__state = state || 'new';
         this.__name = name || 'Unregistered User';
+        this.__role = role || undefined
     }
 
     chatId;
     __state;
-    tickets = []
     __authorized = false;
     __role;
 
@@ -27,7 +29,7 @@ class User {
                     const users = JSON.parse(data);
                     const userData = users.find(u => u.chatId === id);
                     if (userData) {
-                        resolve(new User(userData.chatId, userData.state, userData.name));
+                        resolve(new User(userData.chatId, userData.state, userData.name, userData.role));
                     } else {
                         resolve(new User(id));
                     }
@@ -53,7 +55,6 @@ class User {
                     chatId: this.chatId,
                     state: this.__state,
                     name: this.__name,
-                    tickets: this.tickets,
                     authorized: this.__authorized,
                     role: this.__role
                 };
@@ -72,6 +73,36 @@ class User {
             });
         });
     }
+
+    async addTicket(text, userName) {
+        Ticket.createTicket(this.chatId, text, userName)
+        return this.saveUser();
+    }
+
+    deleteUser() {
+        return new Promise((resolve, reject) => {
+            fs.readFile(usersPath, 'utf8', (err, data) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                try {
+                    let users = JSON.parse(data);
+                    users = users.filter(u => u.chatId !== this.chatId);
+                    fs.writeFile(usersPath, JSON.stringify(users, null, 2), 'utf8', (err) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve();
+                        }
+                    });
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        });
+    }
+
     set state(newState) {
         this.__state = newState
         this.saveUser().catch(err => console.error(`Error saving user state: ${err}`));
@@ -113,7 +144,6 @@ exports.User = User;
  * @property {string} chatId - The unique chat identifier for the user.
  * @property {string} state - The current state of the user (default: 'new').
  * @property {string} name - The name of the user (default: 'Unregistered User').
- * @property {Array} tickets - The list of tickets associated with the user.
  * @property {boolean} authorized - Whether the user is authorized.
  *
  * @method readUserData

@@ -5,8 +5,8 @@ const token = fs.readFileSync(path.join(__dirname, '../database/apikey.txt'), 'u
 const bot = new TelegramBot(token, {polling: true});
 
 const User = require('./user.js').User
+const Ticket = require('./ticket.js').Ticket;
 
-const chatStatesPath = path.join(__dirname, '../database/chatStates.json');
 const teamCode = 'raceteam';
 
 freeStateHandle = (msg, user) => {
@@ -20,15 +20,49 @@ freeStateHandle = (msg, user) => {
                 \n- Опишіть свій велосипед, для того що б мехінік міг його знайти`);
             break;
         case '/my_tickets':
-            if (user.tickets.length > 0) {
-                let ticketsList = user.tickets.map((ticket, index) => {
-                    return `${index + 1}. ${ticket.description} (Статус: ${ticket.status})`;
-                }).join('\n');
-                bot.sendMessage(msg.chat.id, `Ваші заявки:\n${ticketsList}`);
+            Ticket.getTicketsByUser(user.chatId).then(tickets => {
+                if (tickets.length > 0) {
+                    bot.sendMessage(msg.chat.id, `Ваші заявки:\n${tickets.map(t => `ID: ${t.id}, Статус: ${t.status}, Текст: ${t.text}`).join('\n')}`);
+                }
+                else {
+                    bot.sendMessage(msg.chat.id, `У вас немає жодної заявки.`);
+                }
+            }).catch(err => {
+                console.error(`Error fetching tickets: ${err}`);
+                user.state = 'free';
+                bot.sendMessage(msg.chat.id, `Виникла помилка при отриманні ваших заявок. Спробуйте ще раз.`);
+            });
+            break;
+        case '/view_tickets':
+            if (user.role == 'mechanic') {
+                Ticket.getAllTickets().then(tickets => {
+                    if (tickets.length > 0) {
+                        bot.sendMessage(msg.chat.id, `Заявки спортсменів:\n${tickets.map(t => `ID: ${t.id}, Автор: ${t.authorName}, Статус: ${t.status}, Текст: ${t.text}`).join('\n')}`);
+                    } else {
+                        bot.sendMessage(msg.chat.id, `Немає жодних заявок від спортсменів.`);
+                    }
+                }).catch(err => {
+                    console.error(`Error fetching tickets: ${err}`);
+                    bot.sendMessage(msg.chat.id, `Виникла помилка при отриманні заявок. Спробуйте ще раз.`);
+                });
             }
             else {
-                bot.sendMessage(msg.chat.id, `У вас немає жодної заявки.`);
+                bot.sendMessage(msg.chat.id, `Ви не маєте доступу до цієї команди.`);
             }
+            break;
+        case '/delete_my_data':
+            bot.sendMessage(msg.chat.id, `Ви впевнені, що хочете видалити всі ваші дані? Введіть "Так" для підтвердження.`);
+            user.state = 'deleting_data';
+            break
+        case '/take_ticket':
+            if (user.role == 'mechanic') {
+                bot.sendMessage(msg.chat.id, `Введіть ID заявки, яку ви хочете взяти в роботу.`);
+                user.state = 'taking_ticket';
+            }
+            else {
+                bot.sendMessage(msg.chat.id, `Ви не маєте доступу до цієї команди.`);
+            }
+            break
         default:
             break;
     }   
@@ -81,19 +115,57 @@ const handleMsg = (msg, user) => {
             }
         case "creating_ticket":
             if (msg.text && msg.text.trim() !== '') {
-                user.tickets.push({
-                    description: msg.text.trim(),
-                    status: 'pending',
-                    createdAt: new Date().toISOString()
-                });
-                user.state = 'free';
-                user.saveUser().then(() => {
-                    bot.sendMessage(msg.chat.id, `Ваша заявка на обслуговування створена! Очікуйте на відповідь механіка.`);
+                user.addTicket(msg.text.trim(), user.name).then(() => {
+                    bot.sendMessage(msg.chat.id, `Ваша заявка на обслуговування була створена!`);
+                    user.state = 'free';
                 }).catch(err => {
-                    console.error(`Error saving ticket: ${err}`);
+                    console.error(`Error creating ticket: ${err}`);
                     bot.sendMessage(msg.chat.id, `Виникла помилка при створенні заявки. Спробуйте ще раз.`);
                 });
             }
+            break;
+        case "deleting_data":
+            if (msg.text.toLowerCase() === 'так') {
+                user.deleteUser().then(() => {
+                    bot.sendMessage(msg.chat.id, `Ваші дані були успішно видалені.`);
+                }).catch(err => {
+                    console.error(`Error deleting user data: ${err}`);
+                    bot.sendMessage(msg.chat.id, `Виникла помилка при видаленні ваших даних. Спробуйте ще раз.`);
+                });
+            }
+            else {
+                bot.sendMessage(msg.chat.id, `Ви скасували видалення даних.`);
+                user.state = 'free';
+            }
+            break
+        case 'taking_ticket': 
+            if (user.role === 'mechanic') {
+                const ticketId = parseInt(msg.text.trim(), 10);
+                Ticket.readTicket(ticketId).then(ticket => {
+                    if (ticket) {
+                        ticket.mechanic = user.chatId;
+                        ticket.status = 'in_progress';
+                        ticket.saveTicket().then(() => {
+                            bot.sendMessage(msg.chat.id, `Ви успішно взяли заявку номер ${ticket.id} в роботу.`)
+                            bot.sendMessage(ticket.author, `Ваша заявка ID: ${ticket.id} була взята в роботу механіком ${user.name}.`)
+                            bot.sendMessage(msg.chat.id, ticket.text);
+                            user.state = 'free';
+                        }).catch(err => {
+                            console.error(`Error saving ticket: ${err}`);
+                            bot.sendMessage(msg.chat.id, `Виникла помилка при взятті заявки в роботу. Спробуйте ще раз.`);
+                        });
+                    } else {
+                        bot.sendMessage(msg.chat.id, `Заявка з ID: ${ticketId} не знайдена.`);
+                    }
+                }).catch(err => {
+                    console.error(`Error fetching ticket: ${err}`);
+                    bot.sendMessage(msg.chat.id, `Виникла помилка при отриманні заявки. Спробуйте ще раз.`);
+                });
+            } else {
+                bot.sendMessage(msg.chat.id, `Ви не маєте доступу до цієї команди.`);
+                user.state = 'free';
+            }
+            break;
         default:
             freeStateHandle(msg, user);
             break;
@@ -104,7 +176,6 @@ const handleMsg = (msg, user) => {
 bot.on('message', (msg) => {
     User.readUserData(msg.chat.id).then((user) => {
         if (user.state === 'new') {
-            user.saveUser()
             user.state = 'started'
             bot.sendMessage(msg.chat.id, `Привіт, для того що б почати користуватися ботом, введи код команди`);
         }
