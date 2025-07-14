@@ -2,194 +2,330 @@ const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
 const token = fs.readFileSync(path.join(__dirname, '../database/apikey.txt'), 'utf8').trim();
-const bot = new TelegramBot(token, {polling: true});
+const bot = new TelegramBot(token, { polling: true });
 
-const User = require('./user.js').User
+const User = require('./user.js').User;
 const Ticket = require('./ticket.js').Ticket;
+const Messages = require('./messages.js');
 
 const teamCode = 'raceteam';
 
-freeStateHandle = (msg, user) => {
-    switch (msg.text.toLowerCase()) {
-        case '/create_ticket':
-            user.state = 'creating_ticket';
-            bot.sendMessage(msg.chat.id, `
-                Що трапилось з вашим велосипедом?! Опишіть детально:
-                \n- З чим пов'язана ваша проблема? (Перемикання передач, гальма, колеса і т.д.)
-                \n- Детально і лаконічно опишіть проблему, поважайте механіка йому це все читати, а головне розуміти! -Тому не жалійте часу
-                \n- Опишіть свій велосипед, для того що б мехінік міг його знайти`);
-            break;
-        case '/my_tickets':
-            Ticket.getTicketsByUser(user.chatId).then(tickets => {
-                if (tickets.length > 0) {
-                    bot.sendMessage(msg.chat.id, `Ваші заявки:\n${tickets.map(t => `ID: ${t.id}, Статус: ${t.status}, Текст: ${t.text}`).join('\n')}`);
-                }
-                else {
-                    bot.sendMessage(msg.chat.id, `У вас немає жодної заявки.`);
-                }
-            }).catch(err => {
-                console.error(`Error fetching tickets: ${err}`);
-                user.state = 'free';
-                bot.sendMessage(msg.chat.id, `Виникла помилка при отриманні ваших заявок. Спробуйте ще раз.`);
-            });
-            break;
-        case '/view_tickets':
-            if (user.role == 'mechanic') {
-                Ticket.getAllTickets().then(tickets => {
-                    if (tickets.length > 0) {
-                        bot.sendMessage(msg.chat.id, `Заявки спортсменів:\n${tickets.map(t => `ID: ${t.id}, Автор: ${t.authorName}, Статус: ${t.status}, Текст: ${t.text}`).join('\n')}`);
-                    } else {
-                        bot.sendMessage(msg.chat.id, `Немає жодних заявок від спортсменів.`);
-                    }
-                }).catch(err => {
-                    console.error(`Error fetching tickets: ${err}`);
-                    bot.sendMessage(msg.chat.id, `Виникла помилка при отриманні заявок. Спробуйте ще раз.`);
-                });
-            }
-            else {
-                bot.sendMessage(msg.chat.id, `Ви не маєте доступу до цієї команди.`);
-            }
-            break;
-        case '/delete_my_data':
-            bot.sendMessage(msg.chat.id, `Ви впевнені, що хочете видалити всі ваші дані? Введіть "Так" для підтвердження.`);
-            user.state = 'deleting_data';
-            break
-        case '/take_ticket':
-            if (user.role == 'mechanic') {
-                bot.sendMessage(msg.chat.id, `Введіть ID заявки, яку ви хочете взяти в роботу.`);
-                user.state = 'taking_ticket';
-            }
-            else {
-                bot.sendMessage(msg.chat.id, `Ви не маєте доступу до цієї команди.`);
-            }
-            break
-        default:
-            break;
-    }   
-}
+/**
+ * Відправляє повідомлення з відповідною клавіатурою.
+ * @param {number} chatId - ID чату.
+ * @param {string} text - Текст повідомлення.
+ * @param {string} keyboardType - Тип клавіатури ('athlete', 'mechanic', 'roleSelection', 'remove').
+ */
+const sendMessageWithKeyboard = (chatId, text, keyboardType) => {
+    let reply_markup = Messages.keyboards.removeKeyboard; // За замовчуванням приховуємо клавіатуру
+    if (keyboardType === 'athlete') {
+        reply_markup = Messages.keyboards.athleteKeyboard;
+    } else if (keyboardType === 'mechanic') {
+        reply_markup = Messages.keyboards.mechanicKeyboard;
+    } else if (keyboardType === 'roleSelection') {
+        reply_markup = Messages.keyboards.roleSelectionKeyboard;
+    } else { // Для підтвердження видалення даних
+        reply_markup = Messages.keyboards.cancelKeyboard;
+    }
 
-const handleMsg = (msg, user) => {
-    switch (user.state) {
-        case "started":
-            if (msg.text.toLowerCase() === teamCode) {
-                user.state = 'naming';
-                bot.sendMessage(msg.chat.id, `Вітаємо! Тепер введіть ваше ім'я для реєстрації.`);
-                
-            } else {
-                bot.sendMessage(msg.chat.id, `Невірний код команди. Спробуйте ще раз.`);
-            }
+    bot.sendMessage(chatId, text, { reply_markup: reply_markup });
+};
+
+
+// --- Обробники станів ---
+
+/**
+ * Обробляє повідомлення, коли користувач знаходиться у "вільному" стані.
+ * @param {Object} msg - Об'єкт повідомлення від Telegram.
+ * @param {User} user - Об'єкт користувача з даними.
+ */
+const handleFreeState = (msg, user) => {
+    const messageText = msg.text.toLowerCase();
+
+    switch (messageText) {
+        case 'створити заявку': // Нова кнопка
+        case '/create_ticket': // Зберігаємо для зворотної сумісності або прямого вводу
+            user.state = 'creating_ticket';
+            sendMessageWithKeyboard(msg.chat.id, Messages.promptCreateTicket(), 'remove'); // Прибираємо клавіатуру для вводу тексту
             break;
-        case "naming":
-            if (msg.text && msg.text.trim() !== '') {
-                user.name = msg.text.trim();
-                user.state = 'role-selection';
-                bot.sendMessage(msg.chat.id, `Дякуємо, ${user.name}! \nВибери свою роль: Спортсмен або Механік`, {
-                    reply_markup: JSON.stringify({
-                    keyboard: [
-                        ['Спортсмен'],
-                        ['Механік']
-                    ]
-                    })
-                });
-            } else {
-                bot.sendMessage(msg.chat.id, `Будь ласка, введіть коректне ім'я.`);
-            }
-            break;
-        case "role-selection":
-            if (msg.text.toLowerCase() == 'спортсмен' || msg.text.toLowerCase() == 'механік') {
-                user.role = (msg.text.toLowerCase() === 'спортсмен') ? 'athlete' : 'mechanic';
-                user.state = 'free';
-                user.authorized = true;
-                bot.sendMessage(msg.chat.id, 
-                    `Тепер ти успішно зареєстрований як ${(user.role === 'athlete') ? 'спортсмен' : 'механік'}!
-                    \nОсь що може цей бот:
-                    ${(user.role === 'athlete') ? 
-                        `\n- Створити заявку на обслуговування: /create_ticket
-                        \n- Переглядати свої заявки: /my_tickets
-                        \n- Отримувати сповіщення про нові квитки`
-                    :
-                        `\n- Переглядати заявки спортсменів: /view_tickets`
-                    }`);
-            } else {
-                bot.sendMessage(msg.chat.id, `Будь ласка, виберіть роль зі списку.`);
-            }
-        case "creating_ticket":
-            if (msg.text && msg.text.trim() !== '') {
-                user.addTicket(msg.text.trim(), user.name).then(() => {
-                    bot.sendMessage(msg.chat.id, `Ваша заявка на обслуговування була створена!`);
-                    user.state = 'free';
-                }).catch(err => {
-                    console.error(`Error creating ticket: ${err}`);
-                    bot.sendMessage(msg.chat.id, `Виникла помилка при створенні заявки. Спробуйте ще раз.`);
-                });
-            }
-            break;
-        case "deleting_data":
-            if (msg.text.toLowerCase() === 'так') {
-                user.deleteUser().then(() => {
-                    bot.sendMessage(msg.chat.id, `Ваші дані були успішно видалені.`);
-                }).catch(err => {
-                    console.error(`Error deleting user data: ${err}`);
-                    bot.sendMessage(msg.chat.id, `Виникла помилка при видаленні ваших даних. Спробуйте ще раз.`);
-                });
-            }
-            else {
-                bot.sendMessage(msg.chat.id, `Ви скасували видалення даних.`);
-                user.state = 'free';
-            }
-            break
-        case 'taking_ticket': 
-            if (user.role === 'mechanic') {
-                const ticketId = parseInt(msg.text.trim(), 10);
-                Ticket.readTicket(ticketId).then(ticket => {
-                    if (ticket) {
-                        ticket.mechanic = user.chatId;
-                        ticket.status = 'in_progress';
-                        ticket.saveTicket().then(() => {
-                            bot.sendMessage(msg.chat.id, `Ви успішно взяли заявку номер ${ticket.id} в роботу.`)
-                            bot.sendMessage(ticket.author, `Ваша заявка ID: ${ticket.id} була взята в роботу механіком ${user.name}.`)
-                            bot.sendMessage(msg.chat.id, ticket.text);
-                            user.state = 'free';
-                        }).catch(err => {
-                            console.error(`Error saving ticket: ${err}`);
-                            bot.sendMessage(msg.chat.id, `Виникла помилка при взятті заявки в роботу. Спробуйте ще раз.`);
-                        });
+        case 'мої заявки': // Нова кнопка
+        case '/my_tickets':
+            Ticket.getTicketsByUser(user.chatId)
+                .then(tickets => {
+                    if (tickets.length > 0) {
+                        sendMessageWithKeyboard(msg.chat.id, Messages.yourTickets(tickets), user.role === 'athlete' ? 'athlete' : 'mechanic');
                     } else {
-                        bot.sendMessage(msg.chat.id, `Заявка з ID: ${ticketId} не знайдена.`);
+                        sendMessageWithKeyboard(msg.chat.id, Messages.noTickets(), user.role === 'athlete' ? 'athlete' : 'mechanic');
                     }
-                }).catch(err => {
-                    console.error(`Error fetching ticket: ${err}`);
-                    bot.sendMessage(msg.chat.id, `Виникла помилка при отриманні заявки. Спробуйте ще раз.`);
+                })
+                .catch(err => {
+                    console.error(`Помилка отримання заявок користувача: ${err}`);
+                    user.state = 'free';
+                    sendMessageWithKeyboard(msg.chat.id, Messages.errorFetchingTickets(), user.role === 'athlete' ? 'athlete' : 'mechanic');
                 });
+            break;
+        case 'переглянути всі заявки': // Нова кнопка (тільки для механіків)
+        case '/view_tickets':
+            if (user.role === 'mechanic') {
+                Ticket.getAllTickets()
+                    .then(tickets => {
+                        if (tickets.length > 0) {
+                            sendMessageWithKeyboard(msg.chat.id, Messages.allTickets(tickets), 'mechanic');
+                        } else {
+                            sendMessageWithKeyboard(msg.chat.id, Messages.noAthleteTickets(), 'mechanic');
+                        }
+                    })
+                    .catch(err => {
+                        console.error(`Помилка отримання всіх заявок: ${err}`);
+                        sendMessageWithKeyboard(msg.chat.id, Messages.errorFetchingAllTickets(), 'mechanic');
+                    });
             } else {
-                bot.sendMessage(msg.chat.id, `Ви не маєте доступу до цієї команди.`);
-                user.state = 'free';
+                sendMessageWithKeyboard(msg.chat.id, Messages.accessDenied(), user.role === 'athlete' ? 'athlete' : 'mechanic');
+            }
+            break;
+        case 'видалити мої дані': // Нова кнопка
+        case '/delete_my_data':
+            sendMessageWithKeyboard(msg.chat.id, Messages.confirmDeleteData(), 'cancel'); // Запитуємо підтвердження з кнопкою "Скасувати"
+            user.state = 'deleting_data';
+            break;
+        case 'взяти заявку в роботу': // Нова кнопка (тільки для механіків)
+        case '/take_ticket':
+            if (user.role === 'mechanic') {
+                sendMessageWithKeyboard(msg.chat.id, Messages.promptTakeTicket(), 'remove'); // Прибираємо клавіатуру для вводу ID
+                user.state = 'taking_ticket';
+            } else {
+                sendMessageWithKeyboard(msg.chat.id, Messages.accessDenied(), user.role === 'athlete' ? 'athlete' : 'mechanic');
             }
             break;
         default:
-            freeStateHandle(msg, user);
+            // Якщо користувач у вільному стані надсилає невідомий текст,
+            // ми не будемо відправляти повідомлення про невідому команду, щоб не спамити.
+            // Клавіатура вже показує доступні опції.
             break;
     }
-}
+};
 
+/**
+ * Обробляє повідомлення, коли користувач знаходиться у стані "started" (початок реєстрації).
+ * @param {Object} msg - Об'єкт повідомлення від Telegram.
+ * @param {User} user - Об'єкт користувача з даними.
+ */
+const handleStartedState = (msg, user) => {
+    if (msg.text.toLowerCase() === teamCode) {
+        user.state = 'naming';
+        sendMessageWithKeyboard(msg.chat.id, Messages.enterName(), 'remove'); // Прибираємо клавіатуру, щоб користувач міг ввести ім'я
+    } else {
+        sendMessageWithKeyboard(msg.chat.id, Messages.invalidTeamCode(), 'remove');
+    }
+};
+
+/**
+ * Обробляє повідомлення, коли користувач знаходиться у стані "naming" (введення імені).
+ * @param {Object} msg - Об'єкт повідомлення від Telegram.
+ * @param {User} user - Об'єкт користувача з даними.
+ */
+const handleNamingState = (msg, user) => {
+    if (msg.text && msg.text.trim() !== '') {
+        user.name = msg.text.trim();
+        user.state = 'role-selection';
+        sendMessageWithKeyboard(msg.chat.id, Messages.selectRole(user.name), 'roleSelection'); // Показуємо клавіатуру вибору ролі
+    } else {
+        sendMessageWithKeyboard(msg.chat.id, Messages.enterValidName(), 'remove');
+    }
+};
+
+/**
+ * Обробляє повідомлення, коли користувач знаходиться у стані "role-selection" (вибір ролі).
+ * @param {Object} msg - Об'єкт повідомлення від Telegram.
+ * @param {User} user - Об'єкт користувача з даними.
+ */
+const handleRoleSelectionState = (msg, user) => {
+    const messageText = msg.text.toLowerCase();
+    if (messageText === 'спортсмен' || messageText === 'механік') {
+        user.role = (messageText === 'спортсмен') ? 'athlete' : 'mechanic';
+        user.state = 'free';
+        user.authorized = true;
+        const welcomeMessage = (user.role === 'athlete') ?
+            Messages.registrationCompleteAthlete() :
+            Messages.registrationCompleteMechanic();
+
+        // Відправляємо відповідне вітальне повідомлення з клавіатурою ролі
+        sendMessageWithKeyboard(msg.chat.id, welcomeMessage, user.role);
+    } else {
+        sendMessageWithKeyboard(msg.chat.id, Messages.invalidRoleSelection(), 'roleSelection');
+    }
+};
+
+/**
+ * Обробляє повідомлення, коли користувач знаходиться у стані "creating_ticket" (створення заявки).
+ * @param {Object} msg - Об'єкт повідомлення від Telegram.
+ * @param {User} user - Об'єкт користувача з даними.
+*/
+const handleCreatingTicketState = (msg, user) => {
+    if (msg.text && msg.text.trim() !== '') {
+        user.addTicket(msg.text.trim(), user.name)
+            .then(() => {
+                sendMessageWithKeyboard(msg.chat.id, Messages.ticketCreated(), user.role); // Повертаємо клавіатуру ролі
+                user.state = 'free';
+            })
+            .catch(err => {
+                console.error(`Помилка створення заявки: ${err}`);
+                sendMessageWithKeyboard(msg.chat.id, Messages.errorCreatingTicket(), user.role); // Повертаємо клавіатуру ролі
+                user.state = 'free';
+            });
+    } else {
+        sendMessageWithKeyboard(msg.chat.id, `Будь ласка, введіть опис заявки.`, 'remove'); // Нагадуємо про необхідність введення тексту
+    }
+};
+
+/**
+ * Обробляє повідомлення, коли користувач знаходиться у стані "deleting_data" (видалення даних).
+ * @param {Object} msg - Об'єкт повідомлення від Telegram.
+ * @param {User} user - Об'єкт користувача з даними.
+ */
+const handleDeletingDataState = (msg, user) => {
+    const messageText = msg.text.toLowerCase();
+    if (messageText === 'так') {
+        user.deleteUser()
+            .then(() => {
+                sendMessageWithKeyboard(msg.chat.id, Messages.dataDeleted(), 'remove'); // Клавіатура приховується, оскільки дані видалено
+                user.state = 'new'; // Скидаємо стан до 'new' для нової реєстрації
+            })
+            .catch(err => {
+                console.error(`Помилка видалення даних користувача: ${err}`);
+                sendMessageWithKeyboard(msg.chat.id, Messages.errorDeletingData(), user.role); // Повертаємо клавіатуру ролі
+                user.state = 'free';
+            });
+    } else if (messageText === 'скасувати') { // Обробка кнопки "Скасувати"
+        sendMessageWithKeyboard(msg.chat.id, Messages.deleteCancelled(), user.role);
+        user.state = 'free';
+    } else {
+        sendMessageWithKeyboard(msg.chat.id, Messages.confirmDeleteData(), 'cancel'); // Нагадуємо ввести "Так" або "Скасувати"
+    }
+};
+
+/**
+ * Обробляє повідомлення, коли користувач знаходиться у стані "taking_ticket" (взяття заявки в роботу).
+ * @param {Object} msg - Об'єкт повідомлення від Telegram.
+ * @param {User} user - Об'єкт користувача з даними.
+ */
+const handleTakingTicketState = (msg, user) => {
+    if (user.role === 'mechanic') {
+        const ticketId = parseInt(msg.text.trim(), 10);
+        if (isNaN(ticketId)) {
+            sendMessageWithKeyboard(msg.chat.id, Messages.invalidTicketId(), 'mechanic'); // Повертаємо клавіатуру механіка
+            user.state = 'free';
+            return;
+        }
+
+        Ticket.readTicket(ticketId)
+            .then(ticket => {
+                // Перевіряємо, чи заявка існує
+                if (!ticket) {
+                    // Якщо заявка не знайдена, надсилаємо повідомлення і завершуємо виконання
+                    sendMessageWithKeyboard(msg.chat.id, Messages.ticketNotFound(ticketId), 'mechanic');
+                    user.state = 'free';
+                    // Щоб уникнути подальшого виконання Promise, можна кинути помилку
+                    // або повернути Promise.resolve(), якщо наступні .then блоки не мають бути викликані
+                    throw new Error("Ticket not found, stopping execution."); // Кидаємо помилку, щоб перейти в catch
+                }
+
+                if (ticket.status === 'in_progress') {
+                    sendMessageWithKeyboard(msg.chat.id, Messages.ticketAlreadyInProgress(ticket.id), 'mechanic'); // Повертаємо клавіатуру механіка
+                    user.state = 'free';
+                    throw new Error("Ticket already in progress, stopping execution."); // Кидаємо помилку, щоб перейти в catch
+                }
+
+                ticket.mechanic = user.chatId;
+                ticket.status = 'in_progress';
+                return ticket.saveTicket()
+                    .then(() => ticket); // Передаємо ticket далі по ланцюжку
+            })
+            .then(ticket => {
+                // Цей блок виконається, тільки якщо ticket був знайдений і оновлений
+                sendMessageWithKeyboard(msg.chat.id, Messages.ticketTakenByMechanic(ticket.id, ticket.text, ticket.authorName), 'mechanic'); // Повертаємо клавіатуру механіка
+                user.state = 'free';
+                // Надсилаємо повідомлення автору заявки
+                return bot.sendMessage(ticket.author, Messages.ticketTakenByAthleteNotification(ticket.id, user.name))
+                    .then(() => bot.sendMessage(msg.chat.id, `Текст заявки: ${ticket.text}`));
+            })
+            .catch(err => {
+                console.error(`Помилка при взятті заявки в роботу: ${err}`);
+                // Обробляємо помилки, які були кинуті або виникли раніше
+                if (err.message.startsWith('Заявка з ID') || err.message.includes('Ticket not found') || err.message.includes('Ticket already in progress')) {
+                    // Ці повідомлення вже були надіслані, тому просто встановлюємо стан
+                    // Або можна перевизначити, щоб показати конкретне повідомлення
+                    if (err.message.startsWith('Заявка з ID')) { // Це якщо Ticket.readTicket кидає помилку одразу
+                        sendMessageWithKeyboard(msg.chat.id, err.message, 'mechanic');
+                    }
+                } else {
+                    sendMessageWithKeyboard(msg.chat.id, Messages.errorTakingTicket(), 'mechanic');
+                }
+                user.state = 'free';
+            });
+    } else {
+        // Цей блок не мав би спрацьовувати, оскільки перевірка ролі вже є на етапі handleFreeState
+        sendMessageWithKeyboard(msg.chat.id, Messages.accessDenied(), user.role);
+        user.state = 'free';
+    }
+};
+
+// --- Головний обробник повідомлень ---
+
+/**
+ * Головна функція обробки всіх вхідних повідомлень.
+ * Направляє повідомлення до відповідного обробника на основі стану користувача.
+ * @param {Object} msg - Об'єкт повідомлення від Telegram.
+ * @param {User} user - Об'єкт користувача з даними.
+ */
+const handleMsg = (msg, user) => {
+    // Всі вхідні текстові повідомлення переводимо в нижній регістр для зручності порівняння з кнопками
+    const text = msg.text ? msg.text.toLowerCase() : '';
+
+    switch (user.state) {
+        case "started":
+            handleStartedState(msg, user);
+            break;
+        case "naming":
+            handleNamingState(msg, user);
+            break;
+        case "role-selection":
+            handleRoleSelectionState(msg, user);
+            break;
+        case "creating_ticket":
+            handleCreatingTicketState(msg, user);
+            break;
+        case "deleting_data":
+            handleDeletingDataState(msg, user);
+            break;
+        case 'taking_ticket':
+            handleTakingTicketState(msg, user);
+            break;
+        case 'free':
+        default:
+            handleFreeState(msg, user);
+            break;
+    }
+};
+
+// --- Ініціалізація бота ---
 
 bot.on('message', (msg) => {
-    User.readUserData(msg.chat.id).then((user) => {
-        if (user.state === 'new') {
-            user.state = 'started'
-            bot.sendMessage(msg.chat.id, `Привіт, для того що б почати користуватися ботом, введи код команди`);
-        }
-        else {
-            handleMsg(msg, user);
-        }
-        
-    })
-    .catch((err) => {
-        console.error(`Error reading user data: ${err}`);
-    });
+    User.readUserData(msg.chat.id)
+        .then((user) => {
+            if (user.state === 'new') {
+                user.state = 'started';
+                sendMessageWithKeyboard(msg.chat.id, Messages.start(), 'remove'); // Клавіатура поки не потрібна
+            } else {
+                handleMsg(msg, user);
+            }
+        })
+        .catch((err) => {
+            console.error(`Помилка читання даних користувача: ${err}`);
+            sendMessageWithKeyboard(msg.chat.id, Messages.systemError(), 'remove');
+        });
 });
 
-
 bot.on('polling_error', (error) => {
-  console.log(`[polling_error] ${error.code}: ${error.message}`);
+    console.log(`[polling_error] ${error.code}: ${error.message}`);
 });

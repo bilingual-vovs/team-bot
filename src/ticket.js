@@ -69,8 +69,8 @@ class Ticket {
                 const ticketObj = {
                     id: this.id,
                     author: this.author,
-                    __status: this.__status,
-                    __mechanic: this.__mechanic,
+                    status: this.__status,
+                    mechanic: this.__mechanic,
                     text: this.text,
                     createdAt: this.createdAt,
                     authorName: this.authorName || 'Невідомий Чемпіон'
@@ -119,7 +119,7 @@ class Ticket {
                 }
                 try {
                     const tickets = JSON.parse(data);
-                    resolve(tickets.map(t => new Ticket(t.id, t.author, t.status, t.__mechanic, t.text, t.createdAt, t.authorName)));
+                    resolve(tickets.map(t => new Ticket(t.id, t.author, t.status, t.mechanic, t.text, t.createdAt, t.authorName)));
                 } catch (e) {
                     reject(e);
                 }
