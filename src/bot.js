@@ -24,8 +24,11 @@ const sendMessageWithKeyboard = (chatId, text, keyboardType) => {
         reply_markup = Messages.keyboards.mechanicKeyboard;
     } else if (keyboardType === 'roleSelection') {
         reply_markup = Messages.keyboards.roleSelectionKeyboard;
-    } else { // Для підтвердження видалення даних
+    } else if (keyboardType === 'cancel'){ // Для підтвердження видалення даних
         reply_markup = Messages.keyboards.cancelKeyboard;
+    }
+    else if (keyboardType === 'noNotes') {
+        reply_markup = Messages.keyboards.noNotesKeyboard;
     }
 
     bot.sendMessage(chatId, text, { reply_markup: reply_markup });
@@ -96,6 +99,31 @@ const handleFreeState = (msg, user) => {
             } else {
                 sendMessageWithKeyboard(msg.chat.id, Messages.accessDenied(), user.role === 'athlete' ? 'athlete' : 'mechanic');
             }
+            break;
+        case 'виконати заявку': // Нова кнопка (тільки для механіків)
+        case '/complete_ticket':
+            if (user.role === 'mechanic') {
+                sendMessageWithKeyboard(msg.chat.id, Messages.promptCompleteTicket(), 'remove'); // Прибираємо клавіатуру для вводу ID
+                user.state = 'completeng_ticket';
+            } else {
+                sendMessageWithKeyboard(msg.chat.id, Messages.accessDenied(), user.role === 'athlete' ? 'athlete' : 'mechanic');
+            }
+            break;
+        case "немає приміток":
+        case "/no_notes":
+            Ticket.readTicket(parseInt(user.state.match(/^taking_notes_completing_ticket_(\d+)$/)[1], 10)).then(ticket => {
+                ticket.status = 'completed';
+                
+                sendMessageWithKeyboard(msg.chat.id, Messages.ticketCompletedNoNotes(), user.role === 'mechanic' ? 'mechanic' : 'athlete');
+                sendMessageWithKeyboard(ticket.author, Messages.ticketCompletedNotification(user.name, ), 'athlete');
+
+                user.state = 'free';
+
+            }).catch(err => {   
+                console.error(`Помилка при отриманні заявки: ${err}`);
+                sendMessageWithKeyboard(msg.chat.id, Messages.errorCompletingTicket(), user.role === 'mechanic' ? 'mechanic' : 'athlete');
+                user.state = 'free';
+            });
             break;
         default:
             // Якщо користувач у вільному стані надсилає невідомий текст,
@@ -270,6 +298,71 @@ const handleTakingTicketState = (msg, user) => {
     }
 };
 
+const handleCompletingTicketState = (msg, user) => {
+    if (user.role !== 'mechanic') {
+        sendMessageWithKeyboard(msg.chat.id, Messages.accessDenied(), user.role === 'athlete' ? 'athlete' : 'mechanic');
+        user.state = 'free';   
+        return;
+    }
+    const ticketId = parseInt(msg.text.trim(), 10);
+    if (isNaN(ticketId)) {
+        sendMessageWithKeyboard(msg.chat.id, Messages.invalidTicketID(), 'mechanic'); // Повертаємо клавіатуру механіка
+        return;
+    }
+    Ticket.readTicket(ticketId)
+        .then(ticket => {
+            if (!ticket) {
+                sendMessageWithKeyboard(msg.chat.id, Messages.ticketNotFound(ticketId), 'mechanic'); // Повертаємо клавіатуру механіка
+                user.state = 'free';
+                throw new Error("Ticket not found, stopping execution."); // Кидаємо помилку, щоб перейти в catch
+            }   
+            if (ticket.status !== 'in_progress') {
+                sendMessageWithKeyboard(msg.chat.id, Messages.ticketNotInProgress(ticketId), 'mechanic'); // Повертаємо клавіатуру механіка
+                user.state = 'free';
+                throw new Error("Ticket not in progress, stopping execution."); // Кидаємо помилу, щоб перейти в catch
+            }
+            sendMessageWithKeyboard(msg.chat.id, Messages.ticketCompleted(), 'noNotes'); // Прибираємо клавіатуру для вводу ID
+            user.state = 'taking_notes_completing_ticket_' + ticketId; // Змінюємо стан на completing_ticket
+            ticket.mechanic = user.chatId; // Зберігаємо механіка
+        }).catch(err => {
+            console.error(`Помилка при отриманні заявки: ${err}`);
+            sendMessageWithKeyboard(msg.chat.id, Messages.errorFetchingTicket(), 'mechanic'); // Повертаємо клавіатуру механіка
+            user.state = 'free';
+            return
+        })
+    }
+
+const handleTakingNotesCompletingTicketState = (msg, user, ticketId) => {
+    if (user.role !== 'mechanic') {
+        sendMessageWithKeyboard(msg.chat.id, Messages.accessDenied(), user.role === 'athlete' ? 'athlete' : 'mechanic');
+        user.state = 'free';
+        return;
+    }
+    const notes = msg.text.trim();
+    if (notes && notes.length > 0) {
+        Ticket.readTicket(ticketId)
+            .then(ticket => {
+                if (!ticket) {
+                    sendMessageWithKeyboard(msg.chat.id, Messages.ticketNotFound(ticketId), 'mechanic'); // Повертаємо клавіатуру механіка
+                    user.state = 'free';
+                    throw new Error("Ticket not found, stopping execution."); // Кидаємо помилку, щоб перейти в catch
+                }
+                ticket.status = 'completed';
+                ticket.text += `\n\nПримітки механіка: ${notes}`; // Додаємо примітки до тексту заявки
+                ticket.mechanic = user.chatId; // Зберігаємо механіка
+                sendMessageWithKeyboard(msg.chat.id, Messages.ticketCompletedNotes(), 'mechanic') // Повертаємо клавіатуру механіка
+                sendMessageWithKeyboard(ticket.author, Messages.ticketCompletedNotification(user.name, ticket.id, notes), 'athlete'); // Повідомляємо автора заявки
+                user.state = 'free';
+            })
+            .catch(err => {
+                console.error(`Помилка при збереженні заявки: ${err}`);
+                sendMessageWithKeyboard(msg.chat.id, Messages.errorCompletingTicket(), 'mechanic'); // Повертаємо клавіатуру механіка
+                user.state = 'free';
+            });
+    }
+}
+        
+
 // --- Головний обробник повідомлень ---
 
 /**
@@ -282,26 +375,32 @@ const handleMsg = (msg, user) => {
     // Всі вхідні текстові повідомлення переводимо в нижній регістр для зручності порівняння з кнопками
     const text = msg.text ? msg.text.toLowerCase() : '';
 
-    switch (user.state) {
-        case "started":
+    switch (true) {
+        case user.state === "started":
             handleStartedState(msg, user);
             break;
-        case "naming":
+        case user.state === "naming":
             handleNamingState(msg, user);
             break;
-        case "role-selection":
+        case user.state === "role-selection":
             handleRoleSelectionState(msg, user);
             break;
-        case "creating_ticket":
+        case user.state === "creating_ticket":
             handleCreatingTicketState(msg, user);
             break;
-        case "deleting_data":
+        case user.state === "deleting_data":
             handleDeletingDataState(msg, user);
             break;
-        case 'taking_ticket':
+        case user.state === 'taking_ticket':
             handleTakingTicketState(msg, user);
             break;
-        case 'free':
+        case user.state === 'completeng_ticket':
+            handleCompletingTicketState(msg, user);
+            break;
+        case /^taking_notes_completing_ticket_(\d+)$/.test(user.state):
+            handleTakingNotesCompletingTicketState(msg, user, parseInt(user.state.match(/^taking_notes_completing_ticket_(\d+)$/)[1]), 10);
+            break;
+            case 'free':
         default:
             handleFreeState(msg, user);
             break;
@@ -311,6 +410,7 @@ const handleMsg = (msg, user) => {
 // --- Ініціалізація бота ---
 
 bot.on('message', (msg) => {
+    console.log(msg.text)
     User.readUserData(msg.chat.id)
         .then((user) => {
             if (user.state === 'new') {

@@ -119,7 +119,7 @@ class Ticket {
                 }
                 try {
                     const tickets = JSON.parse(data);
-                    resolve(tickets.map(t => new Ticket(t.id, t.author, t.status, t.mechanic, t.text, t.createdAt, t.authorName)));
+                    resolve(tickets.map(t => new Ticket(t.id, t.author, t.status, t.mechanic, t.text, t.createdAt, t.authorName)).filter(t => t.status !== 'cancelled' && t.status !== 'completed'));
                 } catch (e) {
                     reject(e);
                 }
