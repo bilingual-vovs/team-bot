@@ -31,7 +31,7 @@ const sendMessageWithKeyboard = (chatId, text, keyboardType) => {
         reply_markup = Messages.keyboards.noNotesKeyboard;
     }
 
-    bot.sendMessage(chatId, text, { reply_markup: reply_markup });
+    return bot.sendMessage(chatId, text, { reply_markup: reply_markup });
 };
 
 
@@ -42,7 +42,7 @@ const sendMessageWithKeyboard = (chatId, text, keyboardType) => {
  * @param {Object} msg - Об'єкт повідомлення від Telegram.
  * @param {User} user - Об'єкт користувача з даними.
  */
-const handleFreeState = (msg, user) => {
+const handleMsg = (msg, user) => {
     const messageText = msg.text.toLowerCase();
 
     switch (messageText) {
@@ -103,7 +103,7 @@ const handleFreeState = (msg, user) => {
         case 'виконати заявку': // Нова кнопка (тільки для механіків)
         case '/complete_ticket':
             if (user.role === 'mechanic') {
-                sendMessageWithKeyboard(msg.chat.id, Messages.promptCompleteTicket(), 'remove'); // Прибираємо клавіатуру для вводу ID
+                sendMessageWithKeyboard(msg.chat.id, Messages.promptCompleteTicket(), 'remove') // Прибираємо клавіатуру для вводу ID
                 user.state = 'completeng_ticket';
             } else {
                 sendMessageWithKeyboard(msg.chat.id, Messages.accessDenied(), user.role === 'athlete' ? 'athlete' : 'mechanic');
@@ -126,9 +126,7 @@ const handleFreeState = (msg, user) => {
             });
             break;
         default:
-            // Якщо користувач у вільному стані надсилає невідомий текст,
-            // ми не будемо відправляти повідомлення про невідому команду, щоб не спамити.
-            // Клавіатура вже показує доступні опції.
+            handleStates(msg, user)
             break;
     }
 };
@@ -324,6 +322,7 @@ const handleCompletingTicketState = (msg, user) => {
             sendMessageWithKeyboard(msg.chat.id, Messages.ticketCompleted(), 'noNotes'); // Прибираємо клавіатуру для вводу ID
             user.state = 'taking_notes_completing_ticket_' + ticketId; // Змінюємо стан на completing_ticket
             ticket.mechanic = user.chatId; // Зберігаємо механіка
+            return
         }).catch(err => {
             console.error(`Помилка при отриманні заявки: ${err}`);
             sendMessageWithKeyboard(msg.chat.id, Messages.errorFetchingTicket(), 'mechanic'); // Повертаємо клавіатуру механіка
@@ -342,22 +341,23 @@ const handleTakingNotesCompletingTicketState = (msg, user, ticketId) => {
     if (notes && notes.length > 0) {
         Ticket.readTicket(ticketId)
             .then(ticket => {
+                user.state = 'free';
                 if (!ticket) {
                     sendMessageWithKeyboard(msg.chat.id, Messages.ticketNotFound(ticketId), 'mechanic'); // Повертаємо клавіатуру механіка
-                    user.state = 'free';
                     throw new Error("Ticket not found, stopping execution."); // Кидаємо помилку, щоб перейти в catch
                 }
                 ticket.status = 'completed';
                 ticket.text += `\n\nПримітки механіка: ${notes}`; // Додаємо примітки до тексту заявки
                 ticket.mechanic = user.chatId; // Зберігаємо механіка
                 sendMessageWithKeyboard(msg.chat.id, Messages.ticketCompletedNotes(), 'mechanic') // Повертаємо клавіатуру механіка
-                sendMessageWithKeyboard(ticket.author, Messages.ticketCompletedNotification(user.name, ticket.id, notes), 'athlete'); // Повідомляємо автора заявки
-                user.state = 'free';
+                sendMessageWithKeyboard(ticket.author, Messages.ticketCompletedNotification(user.name, ticket.id, notes), 'athlete') // Повідомляємо автора заявки
+                return
             })
             .catch(err => {
                 console.error(`Помилка при збереженні заявки: ${err}`);
                 sendMessageWithKeyboard(msg.chat.id, Messages.errorCompletingTicket(), 'mechanic'); // Повертаємо клавіатуру механіка
                 user.state = 'free';
+                return
             });
     }
 }
@@ -371,7 +371,7 @@ const handleTakingNotesCompletingTicketState = (msg, user, ticketId) => {
  * @param {Object} msg - Об'єкт повідомлення від Telegram.
  * @param {User} user - Об'єкт користувача з даними.
  */
-const handleMsg = (msg, user) => {
+const handleStates = (msg, user) => {
     // Всі вхідні текстові повідомлення переводимо в нижній регістр для зручності порівняння з кнопками
     const text = msg.text ? msg.text.toLowerCase() : '';
 
@@ -400,9 +400,8 @@ const handleMsg = (msg, user) => {
         case /^taking_notes_completing_ticket_(\d+)$/.test(user.state):
             handleTakingNotesCompletingTicketState(msg, user, parseInt(user.state.match(/^taking_notes_completing_ticket_(\d+)$/)[1]), 10);
             break;
-            case 'free':
         default:
-            handleFreeState(msg, user);
+            sendMessageWithKeyboard(msg.chat.id, Messages.unknownCommand(), user.role)
             break;
     }
 };
@@ -422,10 +421,10 @@ bot.on('message', (msg) => {
         })
         .catch((err) => {
             console.error(`Помилка читання даних користувача: ${err}`);
-            sendMessageWithKeyboard(msg.chat.id, Messages.systemError(), 'remove');
+            sendMessageWithKeyboard(msg.chat.id, Messages.systemError(), user.role == "athlete" ? 'athlete' : 'mechanic');
         });
 });
 
 bot.on('polling_error', (error) => {
-    console.log(`[polling_error] ${error.code}: ${error.message}`);
+    console.error(`[polling_error] ${error.code}: ${error.message}`);
 });
