@@ -4,7 +4,7 @@
   "description": "Race team bot",
   "main": "bot.js",
   "scripts": {
-    "dev": "nodemon ./src/bot.js --ignore apikey.txt --ignore users.json --ignore chatStates.json",
+    "dev": "nodemon ./src/bot.js --ignore apikey.txt --ignore users.json --ignore chatStates.json --ignore msg.json --ignore tickets.json",
     "start": "node bot.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

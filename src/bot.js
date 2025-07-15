@@ -15,7 +15,10 @@ const locker = (id) => {
     return new Promise((res, rej) => {
         fs.readFile(lockPath, (err, data) => {
             const lock = JSON.parse(data)
-            if (!(id in lock)) {
+            const lockS = new Set(lock)
+            if (!(lockS.has(id))) {
+                console.log(id)
+                console.log(id in lock)
                 lock.push(id)
                 fs.writeFile(lockPath, JSON.stringify(lock), "utf-8", (err) => {
                     if (err){
@@ -48,6 +51,12 @@ const sendMessageWithKeyboard = (chatId, text, keyboardType) => {
     }
     else if (keyboardType === 'noNotes') {
         reply_markup = Messages.keyboards.noNotesKeyboard;
+    }
+    else if(typeof keyboardType == 'object') {
+        if (keyboardType.type == 'ids'){
+            reply_markup = Messages.keyboards.idsKeyboard(keyboardType.ids)
+            console.log(reply_markup)
+        }
     }
 
     return bot.sendMessage(chatId, text, { reply_markup: reply_markup });
@@ -113,8 +122,11 @@ const handleMsg = (msg, user) => {
         case 'взяти заявку в роботу': // Нова кнопка (тільки для механіків)
         case '/take_ticket':
             if (user.role === 'mechanic') {
-                sendMessageWithKeyboard(msg.chat.id, Messages.promptTakeTicket(), 'remove'); // Прибираємо клавіатуру для вводу ID
-                user.state = 'taking_ticket';
+                Ticket.getAllTickets()
+                .then((tickets) => {
+                    sendMessageWithKeyboard(msg.chat.id, Messages.promptTakeTicket(), {type: "ids", ids: tickets.map((t) => t.id)}); // Прибираємо клавіатуру для вводу ID
+                    user.state = 'taking_ticket';
+                })
             } else {
                 sendMessageWithKeyboard(msg.chat.id, Messages.accessDenied(), user.role === 'athlete' ? 'athlete' : 'mechanic');
             }
@@ -220,6 +232,7 @@ const handleCreatingTicketState = (msg, user) => {
                 user.state = 'free';
             });
     } else {
+        
         sendMessageWithKeyboard(msg.chat.id, `Будь ласка, введіть опис заявки.`, 'remove'); // Нагадуємо про необхідність введення тексту
     }
 };
@@ -257,7 +270,7 @@ const handleDeletingDataState = (msg, user) => {
  */
 const handleTakingTicketState = (msg, user) => {
     if (user.role === 'mechanic') {
-        const ticketId = parseInt(msg.text.trim(), 10);
+        const ticketId = parseInt(msg.text.trim().replace(/^#/, ''), 10);
         if (isNaN(ticketId)) {
             sendMessageWithKeyboard(msg.chat.id, Messages.invalidTicketID(), 'mechanic'); // Повертаємо клавіатуру механіка
             user.state = 'free';
@@ -434,7 +447,7 @@ const handleStates = (msg, user) => {
 // --- Ініціалізація бота ---
 
 bot.on('message', (msg) => {
-    locker(msg.date + msg.message_id).then(() => {
+    locker(String(msg.date) + ':' + msg.message_id).then(() => {
         console.log(msg.text)
         User.readUserData(msg.chat.id)
             .then((user) => {

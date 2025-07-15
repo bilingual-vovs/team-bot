@@ -42,7 +42,30 @@ const Messages = {
         }),
         removeKeyboard: JSON.stringify({
             remove_keyboard: true
-        })
+        }),
+        idsKeyboard: (ids) => {
+            let chunk = Math.ceil(Math.sqrt(ids.length))
+            let keyboard = []
+
+            for (let i = 0; i < chunk * chunk; i+=chunk){
+                let arr = []
+                for (let j = 0; j<chunk; j++){
+                    if (i+j+1 > ids.length){
+                        keyboard.push(arr)
+                        return JSON.stringify({
+                            keyboard,
+                        })
+                    }
+                    arr.push({text: '#' + ids[i+j]})
+                }
+                keyboard.push(arr)
+            }
+            
+
+            return JSON.stringify({
+                keyboard,
+            })
+        }
     },
 
     inlineKeyboards: {
