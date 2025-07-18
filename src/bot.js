@@ -1,17 +1,19 @@
+require('dotenv').config(); 
+const token = process.env.TELEGRAM_BOT_TOKEN;
+
+const teamCode = process.env.TEAM_CODE || 'raceteam'; 
+const mechanicPassword = process.env.MECHANIC_PASSWORD;
+
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
-const token = fs.readFileSync(path.join(__dirname, '../database/apikey.txt'), 'utf8').trim();
 const bot = new TelegramBot(token, { polling: true });
 
 const User = require('./user.js').User;
 const Ticket = require('./ticket.js').Ticket;
 const Messages = require('./messages.js');
-const { send } = require('process');
 const lockPath = path.join(process.cwd(), 'database', 'msg.json');
 
-const teamCode = 'raceteam';
-const mechanicPassword = 'Homenko228';
 
 const locker = (id) => {
     return new Promise((res, rej) => {
@@ -126,6 +128,11 @@ const handleMsg = (msg, user) => {
                 Ticket.getAllTickets()
                 .then((tickets) => {
                     tickets = tickets.filter(t => t.status === 'pending');
+                    if (tickets.length === 0) {
+                        sendMessageWithKeyboard(msg.chat.id, Messages.noPendingTickets(), 'mechanic');
+                        user.state = 'free';
+                        return;
+                    }
                     sendMessageWithKeyboard(msg.chat.id, Messages.promptTakeTicket(), {type: "ids", ids: tickets.map((t) => t.id)});
                     user.state = 'taking_ticket';
                 })
@@ -139,6 +146,11 @@ const handleMsg = (msg, user) => {
                 Ticket.getAllTickets()
                 .then((tickets) => {
                     tickets = tickets.filter(t => t.status === 'in_progress');
+                    if (tickets.length == 0) {
+                        sendMessageWithKeyboard(msg.chat.id, Messages.noTicketsInProgress(), user.role)
+                        user.state = 'free'
+                        return
+                    }
                     sendMessageWithKeyboard(msg.chat.id, Messages.promptCompleteTicket(), {type: "ids", ids: tickets.map((t) => t.id)});
                     user.state = 'completing_ticket';
                 })
@@ -150,6 +162,9 @@ const handleMsg = (msg, user) => {
         case "/no_notes":
             Ticket.readTicket(parseInt(user.state.match(/^taking_notes_completing_ticket_(\d+)$/)[1], 10)).then(ticket => {
                 ticket.status = 'completed';
+
+                if (ticket.messageId) bot.unpinChatMessage(msg.chat.id).then(res => console.log('dd' + res)) // Знімаємо закріплення заявки
+                ticket.messageId = null; // Очищаємо ID повідомлення, оскільки заявка завершена
                 
                 sendMessageWithKeyboard(msg.chat.id, Messages.ticketCompletedNoNotes(), user.role === 'mechanic' ? 'mechanic' : 'athlete');
                 sendMessageWithKeyboard(ticket.author, Messages.ticketCompletedNotification(user.name, ticket.id), 'athlete');
@@ -197,6 +212,12 @@ const handleComplexMsg = (msg, user) => {
                 ticket.mechanic = user.chatId;
                 ticket.status = 'in_progress';
                 sendMessageWithKeyboard(msg.chat.id, Messages.ticketTakenByMechanic(ticket.id, ticket.text, ticket.authorName), 'mechanic')
+                .then((msg) => {
+                    ticket.messageId = msg.message_id; // Зберігаємо ID повідомлення
+                    bot.pinChatMessage(msg.chat.id, msg.message_id, {
+                        disable_notification: true
+                    })
+                })
                 sendMessageWithKeyboard(ticket.author, Messages.ticketTakenByAthleteNotification(ticket.id, user.name), 'athlete');
                 user.state = 'free';
                 return
@@ -228,6 +249,8 @@ const handleComplexMsg = (msg, user) => {
                 }
                 ticket.status = 'completed';
                 ticket.mechanic = user.chatId;
+                if (ticket.messageId) bot.unpinChatMessage(msg.chat.id).then(res => console.log('dd' + res)) // Знімаємо закріплення заявки
+                ticket.messageId = null; // Очищаємо ID повідомлення, оскільки заявка завершена
                 sendMessageWithKeyboard(msg.chat.id, Messages.ticketCompleted(), 'noNotes'); 
                 user.state = `taking_notes_completing_ticket_${ticket.id}`;
                 return;
@@ -318,7 +341,7 @@ const handleCreatingTicketState = (msg, user) => {
     if (msg.text && msg.text.trim() !== '') {
         user.addTicket(msg.text.trim(), user.name)
             .then(() => {
-                sendMessageWithKeyboard(msg.chat.id, Messages.ticketCreated(), user.role); // Повертаємо клавіатуру ролі
+                sendMessageWithKeyboard(msg.chat.id, Messages.ticketCreated(), user.role) // Повертаємо клавіатуру ролі
                 user.state = 'free';
                 return
             })
@@ -402,7 +425,13 @@ const handleTakingTicketState = (msg, user) => {
             })
             .then(ticket => {
                 // Цей блок виконається, тільки якщо ticket був знайдений і оновлений
-                sendMessageWithKeyboard(msg.chat.id, Messages.ticketTakenByMechanic(ticket.id, ticket.text, ticket.authorName), 'mechanic'); // Повертаємо клавіатуру механіка
+                sendMessageWithKeyboard(msg.chat.id, Messages.ticketTakenByMechanic(ticket.id, ticket.text, ticket.authorName), 'mechanic')
+                .then((msg) => {
+                    ticket.messageId = msg.message_id; // Зберігаємо ID повідомлення
+                    bot.pinChatMessage(msg.chat.id, msg.message_id, {
+                        disable_notification: true
+                    })
+                }) // Повертаємо клавіатуру механіка
                 user.state = 'free';
                 // Надсилаємо повідомлення автору заявки
                 return bot.sendMessage(ticket.author, Messages.ticketTakenByAthleteNotification(ticket.id, user.name))
@@ -478,11 +507,14 @@ const handleTakingNotesCompletingTicketState = (msg, user, ticketId) => {
                 user.state = 'free';
                 if (!ticket) {
                     sendMessageWithKeyboard(msg.chat.id, Messages.ticketNotFound(ticketId), 'mechanic'); // Повертаємо клавіатуру механіка
-                    throw new Error("Ticket not found, stopping execution."); // Кидаємо помилку, щоб перейти в catch
+                    console.error("Ticket not found, stopping execution."); 
+                    return
                 }
                 ticket.status = 'completed';
                 ticket.text += `\n\nПримітки механіка: ${notes}`; // Додаємо примітки до тексту заявки
                 ticket.mechanic = user.chatId; // Зберігаємо механіка
+                bot.unpinChatMessage(msg.chat.id, ticket.messageId) // Знімаємо закріплення заявки
+                ticket.messageId = null; // Очищаємо ID повідомлення, оскільки заявка завершена
                 sendMessageWithKeyboard(msg.chat.id, Messages.ticketCompletedNotes(), 'mechanic') // Повертаємо клавіатуру механіка
                 sendMessageWithKeyboard(ticket.author, Messages.ticketCompletedNotification(user.name, ticketId, notes), 'athlete') // Повідомляємо автора заявки
                 return
@@ -546,8 +578,11 @@ const handleStates = (msg, user) => {
 // --- Ініціалізація бота ---
 
 bot.on('message', (msg) => {
+    if (!msg.text || !msg.chat || !msg.chat.id) {
+        console.warn("Received message without text or chat ID, ignoring.");
+        return;
+    }
     locker(String(msg.date) + ':' + msg.message_id).then(() => {
-        console.log(msg.text)
         User.readUserData(msg.chat.id)
             .then((user) => {
                 if (user.state === 'new') {

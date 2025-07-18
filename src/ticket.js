@@ -4,7 +4,7 @@ const path = require('path');
 const ticketsPath = path.join(process.cwd(), 'database', 'tickets.json');
 
 class Ticket {
-    constructor(id, author, status, mechanic, text, createdAt, authorName) {
+    constructor(id, author, status, mechanic, text, createdAt, authorName, messageId) {
         this.id = id || this.newId
         this.author = author;
         this.__status = status || 'pending';
@@ -12,6 +12,7 @@ class Ticket {
         this.text = text || '';
         this.createdAt = createdAt || new Date().toISOString();
         this.authorName = authorName || 'Невідомий Чемпіон';
+        this.messageId = messageId || null; // Додано для зберігання ID повідомлення в Telegram
     }
     
     id;
@@ -20,6 +21,7 @@ class Ticket {
     __mechanic; 
     text;
     createdAt;
+    __messageId = null; // Додано для зберігання ID повідомлення в Telegram
 
     get newId() {
         try {
@@ -43,7 +45,7 @@ class Ticket {
                     const tickets = JSON.parse(data);
                     const ticketData = tickets.find(t => t.id === id);
                     if (ticketData) {
-                        resolve(new Ticket(ticketData.id, ticketData.author, ticketData.status, ticketData.__mechanic, ticketData.text, ticketData.createdAt, ticketData.authorName));
+                        resolve(new Ticket(ticketData.id, ticketData.author, ticketData.status, ticketData.__mechanic, ticketData.text, ticketData.createdAt, ticketData.authorName, ticketData.messageId));
                     } else {
                         resolve(null);
                     }
@@ -73,7 +75,8 @@ class Ticket {
                     mechanic: this.__mechanic,
                     text: this.text,
                     createdAt: this.createdAt,
-                    authorName: this.authorName || 'Невідомий Чемпіон'
+                    authorName: this.authorName || 'Невідомий Чемпіон',
+                    messageId: this.__messageId || null
                 };
                 const idx = tickets.findIndex(t => t.id === this.id);
                 if (idx !== -1) {
@@ -119,7 +122,7 @@ class Ticket {
                 }
                 try {
                     const tickets = JSON.parse(data);
-                    resolve(tickets.map(t => new Ticket(t.id, t.author, t.status, t.mechanic, t.text, t.createdAt, t.authorName)).filter(t => t.status !== 'cancelled' && t.status !== 'completed'));
+                    resolve(tickets.map(t => new Ticket(t.id, t.author, t.status, t.mechanic, t.text, t.createdAt, t.authorName, t.messageId)).filter(t => t.status !== 'cancelled' && t.status !== 'completed'));
                 } catch (e) {
                     reject(e);
                 }
@@ -151,6 +154,13 @@ class Ticket {
         });
     }
 
+    set messageId(messageId) {
+        this.__messageId = messageId;
+        this.saveTicket().catch(err => {
+            console.error(`Error saving ticket messageId: ${err}`);
+        });
+    }
+
     get mechanic() {
         return this.__mechanic;
     }
@@ -159,6 +169,9 @@ class Ticket {
         return this.__status;
     } 
 
+    get messageId() {
+        return this.__messageId;
+    }
 }
 
 exports.Ticket = Ticket;
