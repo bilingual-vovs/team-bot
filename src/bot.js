@@ -21,8 +21,6 @@ const locker = (id) => {
             const lock = JSON.parse(data)
             const lockS = new Set(lock)
             if (!(lockS.has(id))) {
-                console.log(id)
-                console.log(id in lock)
                 lock.push(id)
                 fs.writeFile(lockPath, JSON.stringify(lock), "utf-8", (err) => {
                     if (err){
@@ -59,7 +57,6 @@ const sendMessageWithKeyboard = (chatId, text, keyboardType) => {
     else if(typeof keyboardType == 'object') {
         if (keyboardType.type == 'ids'){
             reply_markup = Messages.keyboards.idsKeyboard(keyboardType.ids)
-            console.log(reply_markup)
         }
     }
 
@@ -163,7 +160,7 @@ const handleMsg = (msg, user) => {
             Ticket.readTicket(parseInt(user.state.match(/^taking_notes_completing_ticket_(\d+)$/)[1], 10)).then(ticket => {
                 ticket.status = 'completed';
 
-                if (ticket.messageId) bot.unpinChatMessage(msg.chat.id).then(res => console.log('dd' + res)) // Знімаємо закріплення заявки
+                if (ticket.messageId) bot.unpinChatMessage(msg.chat.id + ":" + ticket.messageId)// Знімаємо закріплення заявки
                 ticket.messageId = null; // Очищаємо ID повідомлення, оскільки заявка завершена
                 
                 sendMessageWithKeyboard(msg.chat.id, Messages.ticketCompletedNoNotes(), user.role === 'mechanic' ? 'mechanic' : 'athlete');
@@ -191,7 +188,6 @@ const handleComplexMsg = (msg, user) => {
                 return;
             }
             const id = parseInt(msg.text.match(/^\/take_(\d+)$/)[1], 10)
-            console.log(id)
             Ticket.readTicket(id)
             .then(ticket => {
                 if (!ticket) {
