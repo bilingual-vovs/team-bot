@@ -243,13 +243,30 @@ const handleComplexMsg = (msg, user) => {
                     console.error("Ticket not found, stopping execution.");
                 }
                 if (ticket.status !== 'in_progress') {
-                    sendMessageWithKeyboard(msg.chat.id, Messages.ticketNotInProgress(ticketId), 'mechanic');
+                    let warning
+                    switch (ticket.status) {
+                        case 'pending':
+                            warning = Messages.ticketNotTaken(ticketId)
+                            break
+                        case 'completed':
+                            warning = Messages.ticketCompletedNC(ticketId)
+                            break
+                        case 'canceled':
+                            warning = Messages.ticketCanceled(ticketId)
+                            break
+                        default:
+                            warning = Messages.ticketNotInProgress(ticketId)
+                            break
+                    }
+                    sendMessageWithKeyboard(msg.chat.id, warning, 'mechanic');
+                    if (ticket.messageId) bot.unpinChatMessage(msg.chat.id + ":" + ticket.messageId)
                     user.state = 'free';
                     console.error("Ticket not in progress, stopping execution.");
+                    return
                 }
                 ticket.status = 'completed';
                 ticket.mechanic = user.chatId;
-                if (ticket.messageId) bot.unpinChatMessage(msg.chat.id).then(res => console.log('dd' + res)) // Знімаємо закріплення заявки
+                if (ticket.messageId) bot.unpinChatMessage(msg.chat.id) // Знімаємо закріплення заявки
                 ticket.messageId = null; // Очищаємо ID повідомлення, оскільки заявка завершена
                 sendMessageWithKeyboard(msg.chat.id, Messages.ticketCompleted(), 'noNotes'); 
                 user.state = `taking_notes_completing_ticket_${ticket.id}`;
@@ -513,7 +530,7 @@ const handleTakingNotesCompletingTicketState = (msg, user, ticketId) => {
                 ticket.status = 'completed';
                 ticket.text += `\n\nПримітки механіка: ${notes}`; // Додаємо примітки до тексту заявки
                 ticket.mechanic = user.chatId; // Зберігаємо механіка
-                bot.unpinChatMessage(msg.chat.id, ticket.messageId) // Знімаємо закріплення заявки
+                bot.unpinChatMessage(msg.chat.id + ":" + ticket.messageId) // Знімаємо закріплення заявки
                 ticket.messageId = null; // Очищаємо ID повідомлення, оскільки заявка завершена
                 sendMessageWithKeyboard(msg.chat.id, Messages.ticketCompletedNotes(), 'mechanic') // Повертаємо клавіатуру механіка
                 sendMessageWithKeyboard(ticket.author, Messages.ticketCompletedNotification(user.name, ticketId, notes), 'athlete') // Повідомляємо автора заявки
