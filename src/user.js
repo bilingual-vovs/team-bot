@@ -1,14 +1,12 @@
 const mongoose = require('mongoose');
-const Ticket = require('./ticket.js').Ticket; // Переконайся, що ticket.js також використовує асинхронні операції або MongoDB
+const Ticket = require('./ticket.js').Ticket; // Переконайся, що ticket.js також використовує проміси або async/await
 
 // --- Схема User ---
-// Визначаємо схему для наших користувачів.
-// Схема — це blueprint, який визначає структуру документів у нашій колекції MongoDB.
 const userSchema = new mongoose.Schema({
     chatId: {
         type: String,
         required: true,
-        unique: true // chatId має бути унікальним для кожного користувача
+        unique: true
     },
     state: {
         type: String,
@@ -28,44 +26,40 @@ const userSchema = new mongoose.Schema({
 });
 
 // --- Модель User ---
-// Створюємо модель на основі схеми.
-// Модель — це те, з чим ми взаємодіємо для виконання операцій CRUD (Create, Read, Update, Delete) з колекцією.
 const UserModel = mongoose.model('User', userSchema);
 
 class User {
     constructor(chatId, state, name, role) {
         this.chatId = chatId;
-        this._state = state || 'new'; // Використовуємо _ замість __ для внутрішніх властивостей
+        this._state = state || 'new';
         this._name = name || 'Unregistered User';
         this._role = role || undefined;
-        this._authorized = false; // Початкове значення за замовчуванням
+        this._authorized = false;
     }
 
     // Статичний метод для читання даних користувача з MongoDB
-    // Тепер це асинхронна операція, яка повертає екземпляр User або створює новий, якщо не знайдено.
-    static async readUserData(id) {
-        try {
-            const userData = await UserModel.findOne({ chatId: id });
-            if (userData) {
-                // Якщо користувач знайдений, повертаємо екземпляр класу User, заповнений даними з БД
-                const user = new User(userData.chatId, userData.state, userData.name, userData.role);
-                user._authorized = userData.authorized; // Встановлюємо значення authorized з БД
-                return user;
-            } else {
-                // Якщо користувача не знайдено, повертаємо новий екземпляр User
-                return new User(id);
-            }
-        } catch (error) {
-            console.error(`Помилка читання даних користувача з MongoDB: ${error}`);
-            // У разі помилки також повертаємо новий екземпляр User, щоб продовжити роботу
-            return new User(id);
-        }
+    static readUserData(id) {
+        return new Promise((resolve, reject) => {
+            UserModel.findOne({ chatId: id })
+                .then(userData => {
+                    if (userData) {
+                        const user = new User(userData.chatId, userData.state, userData.name, userData.role);
+                        user._authorized = userData.authorized;
+                        resolve(user);
+                    } else {
+                        resolve(new User(id)); // Користувача не знайдено, повертаємо новий екземпляр
+                    }
+                })
+                .catch(error => {
+                    console.error(`Помилка читання даних користувача з MongoDB: ${error}`);
+                    resolve(new User(id)); // У разі помилки, також повертаємо новий екземпляр
+                });
+        });
     }
 
     // Метод для збереження або оновлення даних користувача в MongoDB
-    // Використовуємо upsert: true для створення документа, якщо він не існує
-    async saveUser() {
-        try {
+    saveUser() {
+        return new Promise((resolve, reject) => {
             const userObj = {
                 chatId: this.chatId,
                 state: this._state,
@@ -73,44 +67,54 @@ class User {
                 authorized: this._authorized,
                 role: this._role
             };
-            // findOneAndUpdate з upsert: true дозволяє оновити існуючий документ або створити новий, якщо його немає
-            await UserModel.findOneAndUpdate(
-                { chatId: this.chatId }, // Знайти за chatId
-                userObj, // Дані для оновлення/вставки
-                { upsert: true, new: true, setDefaultsOnInsert: true } // Опції: створити, якщо не існує; повернути оновлений документ; встановити значення за замовчуванням при вставці
-            );
-            console.log(`Користувача ${this.chatId} збережено/оновлено.`);
-        } catch (error) {
-            console.error(`Помилка збереження користувача ${this.chatId} в MongoDB: ${error}`);
-            throw error; // Передаємо помилку далі
-        }
+            UserModel.findOneAndUpdate(
+                { chatId: this.chatId },
+                userObj,
+                { upsert: true, new: true, setDefaultsOnInsert: true }
+            )
+                .then(() => {
+                    resolve();
+                })
+                .catch(error => {
+                    console.error(`Помилка збереження користувача ${this.chatId} в MongoDB: ${error}`);
+                    reject(error);
+                });
+        });
     }
 
     // Метод для додавання нового тікета
-    // Передбачається, що Ticket.createTicket також працює з MongoDB або є асинхронним
-    async addTicket(text, userName) {
-        // Якщо Ticket клас також переписано для роботи з MongoDB, він повинен мати async метод.
-        await Ticket.createTicket(this.chatId, text, userName);
-        return this.saveUser(); // Зберігаємо оновлений стан користувача (якщо він змінився)
+    addTicket(text, userName) {
+        // Ticket.createTicket повинен повертати проміс
+        return Ticket.createTicket(this.chatId, text, userName)
+            .then(() => this.saveUser()) // Зберігаємо оновлений стан користувача після створення тікета
+            .catch(err => {
+                console.error(`Помилка при додаванні тікета: ${err}`);
+                throw err; // Прокидаємо помилку далі
+            });
     }
 
     // Метод для видалення користувача з MongoDB
-    async deleteUser() {
-        try {
-            const result = await UserModel.deleteOne({ chatId: this.chatId });
-            if (result.deletedCount === 0) {
-                console.warn(`Користувача з chatId ${this.chatId} не знайдено для видалення.`);
-            } else {
-                console.log(`Користувача ${this.chatId} видалено.`);
-            }
-        } catch (error) {
-            console.error(`Помилка видалення користувача ${this.chatId} з MongoDB: ${error}`);
-            throw error;
-        }
+    deleteUser() {
+        return new Promise((resolve, reject) => {
+            UserModel.deleteOne({ chatId: this.chatId })
+                .then(result => {
+                    if (result.deletedCount === 0) {
+                        console.warn(`Користувача з chatId ${this.chatId} не знайдено для видалення.`);
+                    } else {
+                        console.log(`Користувача ${this.chatId} видалено.`);
+                    }
+                    resolve();
+                })
+                .catch(error => {
+                    console.error(`Помилка видалення користувача ${this.chatId} з MongoDB: ${error}`);
+                    reject(error);
+                });
+        });
     }
 
     // --- Геттери та Сеттери ---
-    // Сеттери тепер викликають saveUser, щоб зміни одразу зберігалися в базі даних.
+    // Сеттери тепер викликають saveUser, який повертає проміс.
+    // Обробимо помилку, якщо проміс буде відхилено.
     set state(newState) {
         this._state = newState;
         this.saveUser().catch(err => console.error(`Помилка збереження стану користувача: ${err}`));
@@ -143,4 +147,4 @@ class User {
 }
 
 exports.User = User;
-exports.UserModel = UserModel; // Експортуємо також модель Mongoose, якщо вона знадобиться деінде
+exports.UserModel = UserModel;

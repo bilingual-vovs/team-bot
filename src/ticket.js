@@ -3,9 +3,8 @@ const Counter = require('./counter'); // Підключення до нової 
 
 // --- Схема Ticket ---
 const ticketSchema = new mongoose.Schema({
-    // Змінюємо _id на id, і встановлюємо його тип та властивості
     id: {
-        type: Number, // Тепер ID буде числом
+        type: Number, // ID буде числовим
         unique: true,
         required: true
     },
@@ -40,7 +39,7 @@ const ticketSchema = new mongoose.Schema({
     }
 });
 
-// Додамо індекс для поля id та author
+// Додамо індекс для поля id та author для оптимізації пошуку
 ticketSchema.index({ id: 1 });
 ticketSchema.index({ author: 1 });
 
@@ -59,76 +58,84 @@ class Ticket {
         this._messageId = messageId || null;
     }
 
-    // Допоміжна функція для отримання наступного ID
+    // Допоміжна функція для отримання наступного ID (залишаємо async/await для простоти)
+    // Це внутрішня функція, тому її async/await не вплине на зовнішній Promise-синтаксис
     static async getNextSequenceValue(sequenceName) {
         const sequenceDocument = await Counter.findByIdAndUpdate(
             { _id: sequenceName },
             { $inc: { seq: 1 } },
-            { new: true, upsert: true } // upsert: true створить документ, якщо його немає
+            { new: true, upsert: true }
         );
         return sequenceDocument.seq;
     }
 
     // Метод для створення нового тікета та збереження його в MongoDB
-    static async createTicket(author, text, authorName, messageId = null) {
-        try {
-            const nextId = await Ticket.getNextSequenceValue('ticketId'); // Отримуємо наступний ID
-
-            const newTicketData = {
-                id: nextId, // Використовуємо наш згенерований ID
-                author,
-                text,
-                authorName,
-                messageId,
-                status: 'pending',
-                createdAt: new Date()
-            };
-            const createdTicketDoc = await TicketModel.create(newTicketData);
-            console.log(`Тікет створено: ${createdTicketDoc.id}`);
-            return new Ticket(
-                createdTicketDoc.id,
-                createdTicketDoc.author,
-                createdTicketDoc.status,
-                createdTicketDoc.mechanic,
-                createdTicketDoc.text,
-                createdTicketDoc.createdAt,
-                createdTicketDoc.authorName,
-                createdTicketDoc.messageId
-            );
-        } catch (error) {
-            console.error(`Помилка створення тікета в MongoDB: ${error}`);
-            throw error;
-        }
+    static createTicket(author, text, authorName, messageId = null) {
+        return new Promise((resolve, reject) => {
+            Ticket.getNextSequenceValue('ticketId')
+                .then(nextId => {
+                    const newTicketData = {
+                        id: nextId,
+                        author,
+                        text,
+                        authorName,
+                        messageId,
+                        status: 'pending',
+                        createdAt: new Date()
+                    };
+                    return TicketModel.create(newTicketData);
+                })
+                .then(createdTicketDoc => {
+                    console.log(`Тікет створено: ${createdTicketDoc.id}`);
+                    resolve(new Ticket(
+                        createdTicketDoc.id,
+                        createdTicketDoc.author,
+                        createdTicketDoc.status,
+                        createdTicketDoc.mechanic,
+                        createdTicketDoc.text,
+                        createdTicketDoc.createdAt,
+                        createdTicketDoc.authorName,
+                        createdTicketDoc.messageId
+                    ));
+                })
+                .catch(error => {
+                    console.error(`Помилка створення тікета в MongoDB: ${error}`);
+                    reject(error);
+                });
+        });
     }
 
     // Статичний метод для читання даних тікета за його ID
-    static async readTicket(id) {
-        try {
-            const ticketData = await TicketModel.findOne({ id: id }); // Тепер шукаємо за полем 'id'
-            if (ticketData) {
-                const ticket = new Ticket(
-                    ticketData.id,
-                    ticketData.author,
-                    ticketData.status,
-                    ticketData.mechanic,
-                    ticketData.text,
-                    ticketData.createdAt,
-                    ticketData.authorName,
-                    ticketData.messageId
-                );
-                return ticket;
-            } else {
-                return null;
-            }
-        } catch (error) {
-            console.error(`Помилка читання тікета з MongoDB: ${error}`);
-            throw error;
-        }
+    static readTicket(id) {
+        return new Promise((resolve, reject) => {
+            TicketModel.findOne({ id: id })
+                .then(ticketData => {
+                    if (ticketData) {
+                        const ticket = new Ticket(
+                            ticketData.id,
+                            ticketData.author,
+                            ticketData.status,
+                            ticketData.mechanic,
+                            ticketData.text,
+                            ticketData.createdAt,
+                            ticketData.authorName,
+                            ticketData.messageId
+                        );
+                        resolve(ticket);
+                    } else {
+                        resolve(null);
+                    }
+                })
+                .catch(error => {
+                    console.error(`Помилка читання тікета з MongoDB: ${error}`);
+                    reject(error);
+                });
+        });
     }
 
     // Метод для збереження або оновлення даних тікета в MongoDB
-    async saveTicket() {
-        try {
+    saveTicket() {
+        return new Promise((resolve, reject) => {
             const ticketObj = {
                 author: this.author,
                 status: this._status,
@@ -138,61 +145,69 @@ class Ticket {
                 authorName: this.authorName,
                 messageId: this._messageId
             };
-            // findOneAndUpdate використовуємо для оновлення за нашим полем 'id'
-            const updatedDoc = await TicketModel.findOneAndUpdate(
-                { id: this.id }, // Знайти за полем 'id'
+            TicketModel.findOneAndUpdate(
+                { id: this.id },
                 ticketObj,
                 { new: true, upsert: true }
-            );
-            this.id = updatedDoc.id; // Переконуємось, що id актуальний
-            console.log(`Тікет ${this.id} збережено/оновлено.`);
-        } catch (error) {
-            console.error(`Помилка збереження тікета ${this.id} в MongoDB: ${error}`);
-            throw error;
-        }
+            )
+                .then(updatedDoc => {
+                    this.id = updatedDoc.id;
+                    console.log(`Тікет ${this.id} збережено/оновлено.`);
+                    resolve();
+                })
+                .catch(error => {
+                    console.error(`Помилка збереження тікета ${this.id} в MongoDB: ${error}`);
+                    reject(error);
+                });
+        });
     }
 
     // Статичний метод для отримання тікетів за ID користувача
-    static async getTicketsByUser(uid) {
-        try {
-            const userTicketsDocs = await TicketModel.find({ author: uid }).sort({ createdAt: -1 });
-            return userTicketsDocs.map(t => new Ticket(
-                t.id,
-                t.author,
-                t.status,
-                t.mechanic,
-                t.text,
-                t.createdAt,
-                t.authorName,
-                t.messageId
-            ));
-        } catch (error) {
-            console.error(`Помилка отримання тікетів для користувача ${uid} з MongoDB: ${error}`);
-            throw error;
-        }
+    static getTicketsByUser(uid) {
+        return new Promise((resolve, reject) => {
+            TicketModel.find({ author: uid }).sort({ createdAt: -1 })
+                .then(userTicketsDocs => {
+                    resolve(userTicketsDocs.map(t => new Ticket(
+                        t.id,
+                        t.author,
+                        t.status,
+                        t.mechanic,
+                        t.text,
+                        t.createdAt,
+                        t.authorName,
+                        t.messageId
+                    )));
+                })
+                .catch(error => {
+                    console.error(`Помилка отримання тікетів для користувача ${uid} з MongoDB: ${error}`);
+                    reject(error);
+                });
+        });
     }
 
     // Статичний метод для отримання всіх тікетів (з фільтрацією за статусом)
-    static async getAllTickets() {
-        try {
-            const activeTicketsDocs = await TicketModel.find({
+    static getAllTickets() {
+        return new Promise((resolve, reject) => {
+            TicketModel.find({
                 status: { $nin: ['cancelled', 'completed'] }
-            }).sort({ createdAt: -1 });
-
-            return activeTicketsDocs.map(t => new Ticket(
-                t.id,
-                t.author,
-                t.status,
-                t.mechanic,
-                t.text,
-                t.createdAt,
-                t.authorName,
-                t.messageId
-            ));
-        } catch (error) {
-            console.error(`Помилка отримання всіх тікетів з MongoDB: ${error}`);
-            throw error;
-        }
+            }).sort({ createdAt: -1 })
+                .then(activeTicketsDocs => {
+                    resolve(activeTicketsDocs.map(t => new Ticket(
+                        t.id,
+                        t.author,
+                        t.status,
+                        t.mechanic,
+                        t.text,
+                        t.createdAt,
+                        t.authorName,
+                        t.messageId
+                    )));
+                })
+                .catch(error => {
+                    console.error(`Помилка отримання всіх тікетів з MongoDB: ${error}`);
+                    reject(error);
+                });
+        });
     }
 
     // --- Геттери та Сеттери ---
