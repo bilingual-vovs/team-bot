@@ -14,6 +14,10 @@ const Ticket = require('./ticket.js').Ticket;
 const Messages = require('./messages.js');
 const lockPath = path.join(process.cwd(), 'database', 'msg.json');
 
+const connectDB = require('./db');
+
+// Підключаємося до бази даних при запуску додатку
+connectDB();
 
 const locker = (id) => {
     return new Promise((res, rej) => {

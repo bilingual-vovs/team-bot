@@ -1,177 +1,239 @@
-const fs = require('fs');
-const path = require('path');   
+const mongoose = require('mongoose');
+const Counter = require('./counter'); // Підключення до нової моделі лічильника
 
-const ticketsPath = path.join(process.cwd(), 'database', 'tickets.json');
+// --- Схема Ticket ---
+const ticketSchema = new mongoose.Schema({
+    // Змінюємо _id на id, і встановлюємо його тип та властивості
+    id: {
+        type: Number, // Тепер ID буде числом
+        unique: true,
+        required: true
+    },
+    author: {
+        type: String,
+        required: true
+    },
+    status: {
+        type: String,
+        default: 'pending',
+        enum: ['pending', 'in_progress', 'completed', 'cancelled']
+    },
+    mechanic: {
+        type: String,
+        default: null
+    },
+    text: {
+        type: String,
+        required: true
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    },
+    authorName: {
+        type: String,
+        default: 'Невідомий Чемпіон'
+    },
+    messageId: {
+        type: String,
+        default: null
+    }
+});
+
+// Додамо індекс для поля id та author
+ticketSchema.index({ id: 1 });
+ticketSchema.index({ author: 1 });
+
+// --- Модель Ticket ---
+const TicketModel = mongoose.model('Ticket', ticketSchema);
 
 class Ticket {
     constructor(id, author, status, mechanic, text, createdAt, authorName, messageId) {
-        this.id = id || this.newId
+        this.id = id;
         this.author = author;
-        this.__status = status || 'pending';
-        this.__mechanic = mechanic || null;
+        this._status = status || 'pending';
+        this._mechanic = mechanic || null;
         this.text = text || '';
-        this.createdAt = createdAt || new Date().toISOString();
+        this.createdAt = createdAt || new Date();
         this.authorName = authorName || 'Невідомий Чемпіон';
-        this.messageId = messageId || null; // Додано для зберігання ID повідомлення в Telegram
+        this._messageId = messageId || null;
     }
-    
-    id;
-    author;
-    __status;
-    __mechanic; 
-    text;
-    createdAt;
-    __messageId = null; // Додано для зберігання ID повідомлення в Telegram
 
-    get newId() {
+    // Допоміжна функція для отримання наступного ID
+    static async getNextSequenceValue(sequenceName) {
+        const sequenceDocument = await Counter.findByIdAndUpdate(
+            { _id: sequenceName },
+            { $inc: { seq: 1 } },
+            { new: true, upsert: true } // upsert: true створить документ, якщо його немає
+        );
+        return sequenceDocument.seq;
+    }
+
+    // Метод для створення нового тікета та збереження його в MongoDB
+    static async createTicket(author, text, authorName, messageId = null) {
         try {
-            const tickets = JSON.parse(fs.readFileSync(ticketsPath, { encoding: 'utf8', flag: 'r' }))
-            return tickets.length ? (Number(tickets.sort((a, b) => Number(a.id) - Number(b.id))[tickets.length - 1].id) + 1) : 1;
+            const nextId = await Ticket.getNextSequenceValue('ticketId'); // Отримуємо наступний ID
 
-        } catch (e) {
-            return 1;
+            const newTicketData = {
+                id: nextId, // Використовуємо наш згенерований ID
+                author,
+                text,
+                authorName,
+                messageId,
+                status: 'pending',
+                createdAt: new Date()
+            };
+            const createdTicketDoc = await TicketModel.create(newTicketData);
+            console.log(`Тікет створено: ${createdTicketDoc.id}`);
+            return new Ticket(
+                createdTicketDoc.id,
+                createdTicketDoc.author,
+                createdTicketDoc.status,
+                createdTicketDoc.mechanic,
+                createdTicketDoc.text,
+                createdTicketDoc.createdAt,
+                createdTicketDoc.authorName,
+                createdTicketDoc.messageId
+            );
+        } catch (error) {
+            console.error(`Помилка створення тікета в MongoDB: ${error}`);
+            throw error;
         }
-        
     }
 
-    static readTicket(id) {
-        return new Promise((resolve, reject) => {
-            fs.readFile(ticketsPath, 'utf8', (err, data) => {
-                if (err) {
-                    reject(err);
-                    return;
-                }
-                try {
-                    const tickets = JSON.parse(data);
-                    const ticketData = tickets.find(t => t.id === id);
-                    if (ticketData) {
-                        resolve(new Ticket(ticketData.id, ticketData.author, ticketData.status, ticketData.__mechanic, ticketData.text, ticketData.createdAt, ticketData.authorName, ticketData.messageId));
-                    } else {
-                        resolve(null);
-                    }
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        });
-
+    // Статичний метод для читання даних тікета за його ID
+    static async readTicket(id) {
+        try {
+            const ticketData = await TicketModel.findOne({ id: id }); // Тепер шукаємо за полем 'id'
+            if (ticketData) {
+                const ticket = new Ticket(
+                    ticketData.id,
+                    ticketData.author,
+                    ticketData.status,
+                    ticketData.mechanic,
+                    ticketData.text,
+                    ticketData.createdAt,
+                    ticketData.authorName,
+                    ticketData.messageId
+                );
+                return ticket;
+            } else {
+                return null;
+            }
+        } catch (error) {
+            console.error(`Помилка читання тікета з MongoDB: ${error}`);
+            throw error;
+        }
     }
 
-    saveTicket() {
-        return new Promise((resolve, reject) => {
-            fs.readFile(ticketsPath, 'utf8', (err, data) => {
-                let tickets = [];
-                if (!err && data) {
-                    try {
-                        tickets = JSON.parse(data);
-                    } catch (e) {
-                        // ignore parse error, start with empty array
-                    }
-                }
-                const ticketObj = {
-                    id: this.id,
-                    author: this.author,
-                    status: this.__status,
-                    mechanic: this.__mechanic,
-                    text: this.text,
-                    createdAt: this.createdAt,
-                    authorName: this.authorName || 'Невідомий Чемпіон',
-                    messageId: this.__messageId || null
-                };
-                const idx = tickets.findIndex(t => t.id === this.id);
-                if (idx !== -1) {
-                    tickets[idx] = ticketObj;
-                }   else {
-                    tickets.push(ticketObj);
-                }
-                fs.writeFile(ticketsPath, JSON.stringify(tickets, null, 2), 'utf8', (err) => {
-                    if (err) {
-                        reject(err);
-                    } else {
-                        resolve();
-                    }
-                });
-            });
-        });
+    // Метод для збереження або оновлення даних тікета в MongoDB
+    async saveTicket() {
+        try {
+            const ticketObj = {
+                author: this.author,
+                status: this._status,
+                mechanic: this._mechanic,
+                text: this.text,
+                createdAt: this.createdAt,
+                authorName: this.authorName,
+                messageId: this._messageId
+            };
+            // findOneAndUpdate використовуємо для оновлення за нашим полем 'id'
+            const updatedDoc = await TicketModel.findOneAndUpdate(
+                { id: this.id }, // Знайти за полем 'id'
+                ticketObj,
+                { new: true, upsert: true }
+            );
+            this.id = updatedDoc.id; // Переконуємось, що id актуальний
+            console.log(`Тікет ${this.id} збережено/оновлено.`);
+        } catch (error) {
+            console.error(`Помилка збереження тікета ${this.id} в MongoDB: ${error}`);
+            throw error;
+        }
     }
 
-    static getTicketsByUser(uid) {
-        return new Promise((resolve, reject) => {
-            fs.readFile(ticketsPath, 'utf8', (err, data) => {
-                if (err) {
-                    reject(err);
-                    return;
-                }
-                try {
-                    const tickets = JSON.parse(data);
-                    const userTickets = tickets.filter(t => t.author === uid);
-                    resolve(userTickets.map(t => new Ticket(t.id, t.author, t.status, t.__mechanic, t.text, t.createdAt)));
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        });
+    // Статичний метод для отримання тікетів за ID користувача
+    static async getTicketsByUser(uid) {
+        try {
+            const userTicketsDocs = await TicketModel.find({ author: uid }).sort({ createdAt: -1 });
+            return userTicketsDocs.map(t => new Ticket(
+                t.id,
+                t.author,
+                t.status,
+                t.mechanic,
+                t.text,
+                t.createdAt,
+                t.authorName,
+                t.messageId
+            ));
+        } catch (error) {
+            console.error(`Помилка отримання тікетів для користувача ${uid} з MongoDB: ${error}`);
+            throw error;
+        }
     }
 
-    static getAllTickets() {
-        return new Promise((resolve, reject) => {
-            fs.readFile(ticketsPath, 'utf8', (err, data) => {
-                if (err) {
-                    reject(err);
-                    return;
-                }
-                try {
-                    const tickets = JSON.parse(data);
-                    resolve(tickets.map(t => new Ticket(t.id, t.author, t.status, t.mechanic, t.text, t.createdAt, t.authorName, t.messageId)).filter(t => t.status !== 'cancelled' && t.status !== 'completed'));
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        });
+    // Статичний метод для отримання всіх тікетів (з фільтрацією за статусом)
+    static async getAllTickets() {
+        try {
+            const activeTicketsDocs = await TicketModel.find({
+                status: { $nin: ['cancelled', 'completed'] }
+            }).sort({ createdAt: -1 });
+
+            return activeTicketsDocs.map(t => new Ticket(
+                t.id,
+                t.author,
+                t.status,
+                t.mechanic,
+                t.text,
+                t.createdAt,
+                t.authorName,
+                t.messageId
+            ));
+        } catch (error) {
+            console.error(`Помилка отримання всіх тікетів з MongoDB: ${error}`);
+            throw error;
+        }
     }
 
-    static createTicket( author, text, authorName) {
-        const newTicket = new Ticket(null, author, 'pending', null, text, null, authorName);
-        return newTicket.saveTicket().then(() => newTicket);
-    }
-
-    set status(status) {
+    // --- Геттери та Сеттери ---
+    set status(newStatus) {
         const validStatuses = ['pending', 'in_progress', 'completed', 'cancelled'];
-        if (validStatuses.includes(status)) {
-            this.__status = status;
+        if (validStatuses.includes(newStatus)) {
+            this._status = newStatus;
             this.saveTicket().catch(err => {
-                console.error(`Error saving ticket status: ${err}`);
+                console.error(`Помилка збереження статусу тікета: ${err}`);
             });
         } else {
-            throw new Error(`Invalid status: ${status}`);
+            throw new Error(`Недійсний статус: ${newStatus}`);
         }
     }
 
-    set mechanic(mechanic) {
-        this.__mechanic = mechanic;
+    set mechanic(newMechanic) {
+        this._mechanic = newMechanic;
         this.saveTicket().catch(err => {
-            console.error(`Error saving ticket mechanic: ${err}`);
+            console.error(`Помилка збереження механіка тікета: ${err}`);
         });
     }
 
-    set messageId(messageId) {
-        this.__messageId = messageId;
+    set messageId(newMessageId) {
+        this._messageId = newMessageId;
         this.saveTicket().catch(err => {
-            console.error(`Error saving ticket messageId: ${err}`);
+            console.error(`Помилка збереження messageId тікета: ${err}`);
         });
     }
 
     get mechanic() {
-        return this.__mechanic;
+        return this._mechanic;
     }
 
     get status() {
-        return this.__status;
-    } 
+        return this._status;
+    }
 
     get messageId() {
-        return this.__messageId;
+        return this._messageId;
     }
 }
 
 exports.Ticket = Ticket;
+exports.TicketModel = TicketModel;
