@@ -5,6 +5,6 @@ const counterSchema = new mongoose.Schema({
     seq: { type: Number, default: 0 }    // Поточне значення лічильника
 });
 
-const Counter = mongoose.model('Counter', counterSchema);
+const Counter = mongoose.model(process.env.COUNTERS_COLLECTION || 'Counter', counterSchema);
 
 module.exports = Counter;

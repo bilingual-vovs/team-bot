@@ -1,4 +1,12 @@
 // messages.js
+
+const translate = {
+    pending: 'очікує обробки',
+    in_progress: 'вже в роботі',
+    completed: "вже завершена",
+    canceled: "скасована"
+}
+
 const Messages = {
 
 
@@ -56,6 +64,7 @@ const Messages = {
             
         },
         idsKeyboard: (ids) => {
+            ids.sort((a, b) => a - b)
             let chunk = Math.ceil(Math.sqrt(ids.length))
             let keyboard = []
 
@@ -139,13 +148,15 @@ const Messages = {
 
 
     // 📋 Перегляд та Статуси Заявок
-    yourTickets: (tickets) => `📋 Твої заявки:\n${tickets.map(t => `\n---
+    yourTickets: (tickets) => `📋 Твої заявки:\n${
+        tickets.sort((a, b) => a.id - b.id).map(t => `\n---
 - #${t.id}
-    Статус: ${t.status}
+    Статус: ${translate[t.status]}
     Опис: ${t.text}`).join('\n')}`,
-    allTickets: (tickets) => `📋 Заявки спортсменів:\n${tickets.map(t => `\n- #${t.id}
+    allTickets: (tickets) => `📋 Заявки спортсменів:\n${
+        tickets.sort((a, b) => a.id - b.id).map(t => `\n- #${t.id}
         \n    Автор: ${t.authorName}
-        \n    Статус: ${t.status == 'pending' ? 'очікує' : (t.status == 'in_progress' ? 'взята в роботу' : "Виконана чи відмінена - хз")}
+        \n    Статус: ${translate[t.status]}
         \n    Опис: ${t.text}
         ${t.status == "pending" || t.status == 'in_progress' ?`\n    ${t.status == 'pending' ? `Взяти в роботу: /take_${t.id}` : `Завершити заявку: /complete_${t.id}`}` : ''}`).join('\n---')}`,
     ticketTakenByAthleteNotification: (ticketId, mechanicName) => `🔔 Увага! Твою заявку з #${ticketId} вже взяв у роботу механік ${mechanicName}!`,

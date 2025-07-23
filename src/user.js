@@ -26,7 +26,7 @@ const userSchema = new mongoose.Schema({
 });
 
 // --- Модель User ---
-const UserModel = mongoose.model('User', userSchema);
+const UserModel = mongoose.model(process.env.USERS_COLLECTION || 'User', userSchema);
 
 class User {
     constructor(chatId, state, name, role) {
@@ -117,20 +117,49 @@ class User {
     // Обробимо помилку, якщо проміс буде відхилено.
     set state(newState) {
         this._state = newState;
-        this.saveUser().catch(err => console.error(`Помилка збереження стану користувача: ${err}`));
     }
     set name(newName) {
         this._name = newName;
-        this.saveUser().catch(err => console.error(`Помилка збереження імені користувача: ${err}`));
     }
     set authorized(isAuthorized) {
         this._authorized = isAuthorized;
-        this.saveUser().catch(err => console.error(`Помилка збереження авторизації користувача: ${err}`));
     }
     set role(newRole) {
         this._role = newRole;
-        this.saveUser().catch(err => console.error(`Помилка збереження ролі користувача: ${err}`));
     }
+
+    setState(newState) {
+        this._state = newState;
+        // Повертаємо проміс від saveUser
+        return this.saveUser().catch(err => {
+            console.error(`Помилка збереження стану користувача: ${err}`); // Перекидаємо помилку далі, якщо потрібно
+        });
+    }
+
+    setName(newName) {
+        this._name = newName;
+        // Повертаємо проміс від saveUser
+        return this.saveUser().catch(err => {
+            console.error(`Помилка збереження імені користувача: ${err}`);
+        });
+    }
+
+    setAuthorized(isAuthorized) {
+        this._authorized = isAuthorized;
+        // Повертаємо проміс від saveUser
+        return this.saveUser().catch(err => {
+            console.error(`Помилка збереження авторизації користувача: ${err}`);
+        });
+    }
+
+    setRole(newRole) {
+        this._role = newRole;
+        // Повертаємо проміс від saveUser
+        return this.saveUser().catch(err => {
+            console.error(`Помилка збереження ролі користувача: ${err}`);
+        });
+    }
+
 
     get state() {
         return this._state;

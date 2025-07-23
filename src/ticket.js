@@ -44,7 +44,7 @@ ticketSchema.index({ id: 1 });
 ticketSchema.index({ author: 1 });
 
 // --- Модель Ticket ---
-const TicketModel = mongoose.model('Ticket', ticketSchema);
+const TicketModel = mongoose.model(process.env.TICKETS_COLLECTION || "Ticket", ticketSchema);
 
 class Ticket {
     constructor(id, author, status, mechanic, text, createdAt, authorName, messageId) {
