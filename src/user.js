@@ -86,7 +86,10 @@ class User {
     addTicket(text, userName) {
         // Ticket.createTicket повинен повертати проміс
         return Ticket.createTicket(this.chatId, text, userName)
-            .then(() => this.saveUser()) // Зберігаємо оновлений стан користувача після створення тікета
+            .then((tick) => {
+                this.saveUser()
+                return tick
+            }) // Зберігаємо оновлений стан користувача після створення тікета
             .catch(err => {
                 console.error(`Помилка при додаванні тікета: ${err}`);
                 throw err; // Прокидаємо помилку далі
@@ -108,6 +111,28 @@ class User {
                 .catch(error => {
                     console.error(`Помилка видалення користувача ${this.chatId} з MongoDB: ${error}`);
                     reject(error);
+                });
+        });
+    }
+
+    static getAllMechanics = () => {
+        return new Promise((resolve, reject) => {
+            UserModel.find({ role: 'mechanic' })
+                .then(userData => {
+                    if (userData) {
+                        resolve(userData.map(usr => new User(
+                            usr.chatId,
+                            usr.state,
+                            usr.name,
+                            usr.role
+                        )));
+                    } else {
+                        resolve([]) // Користувача не знайдено, повертаємо новий екземпляр
+                    }
+                })
+                .catch(error => {
+                    console.error(`Помилка читання даних користувача з MongoDB: ${error}`);
+                    resolve(new User(id)); // У разі помилки, також повертаємо новий екземпляр
                 });
         });
     }

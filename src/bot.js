@@ -377,8 +377,11 @@ const handleRoleConfirmationState = (msg, user) => {
 const handleCreatingTicketState = (msg, user) => {
     if (msg.text && msg.text.trim() !== '') {
         user.addTicket(msg.text.trim(), user.name)
-            .then(() => {
-                sendMessageWithKeyboard(msg.chat.id, Messages.ticketCreated(), user.role) // Повертаємо клавіатуру ролі
+            .then((ticket) => {
+                sendMessageWithKeyboard(msg.chat.id, Messages.ticketCreated(), user.role)
+                User.getAllMechanics().then(users => users.forEach(usr => {
+                    bot.sendMessage(usr.chatId, Messages.newTicket(user.name, msg.text, ticket.id))
+                }))
                 user.state = 'free';
                 return user.saveUser()
             })
